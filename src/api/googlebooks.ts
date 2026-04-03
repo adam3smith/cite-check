@@ -3,6 +3,40 @@ import { scoreReference, weightedTotal } from '../lib/string-distance'
 
 const BASE = 'https://www.googleapis.com/books/v1'
 
+// Optional API key — set VITE_GOOGLE_BOOKS_API_KEY in .env to use your own quota
+// Restrict the key to HTTP referrers (your GitHub Pages domain) in Google Cloud Console
+const API_KEY = import.meta.env.VITE_GOOGLE_BOOKS_API_KEY as string | undefined
+
+// ── Quota tracking (persisted in localStorage for 24h) ────────────────────────
+
+const QUOTA_KEY = 'cite-check-gb-quota-exhausted-until'
+
+function isQuotaExhausted(): boolean {
+  try {
+    const until = localStorage.getItem(QUOTA_KEY)
+    if (!until) return false
+    return Date.now() < parseInt(until)
+  } catch { return false }
+}
+
+function markQuotaExhausted(): void {
+  try {
+    // Remember until midnight + a few seconds to align with Google's daily reset
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(0, 0, 5, 0)
+    localStorage.setItem(QUOTA_KEY, String(tomorrow.getTime()))
+  } catch { /* localStorage unavailable */ }
+}
+
+export function resetGoogleBooksQuota(): void {
+  try { localStorage.removeItem(QUOTA_KEY) } catch { /* ignore */ }
+}
+
+export function isGoogleBooksQuotaExhausted(): boolean {
+  return isQuotaExhausted()
+}
+
 // ── Author name parsing ───────────────────────────────────────────────────────
 
 const PARTICLES = new Set(['de', 'van', 'von', 'le', 'la', 'di', 'du', 'der', 'den', 'ten', 'ter', 'del', 'della', 'dos', 'das', 'do'])
@@ -84,10 +118,16 @@ export async function searchByTitleAuthor(ref: ParsedReference): Promise<LookupR
     .filter(Boolean)
     .join('+')
 
-  const url = `${BASE}/volumes?q=${q}&maxResults=5&printType=books`
-  console.log('[googlebooks] search:', url)
+  const keyParam = API_KEY ? `&key=${encodeURIComponent(API_KEY)}` : ''
+  const url = `${BASE}/volumes?q=${q}&maxResults=5&printType=books${keyParam}`
+  console.log('[googlebooks] search:', url.replace(API_KEY ?? '__none__', 'REDACTED'))
   try {
     const res = await fetch(url)
+    if (res.status === 429) {
+      // Daily quota exhausted — remember for 24h so we stop trying
+      markQuotaExhausted()
+      return { ...ref, lookupStatus: 'not-found', lookupSource: 'google-books', apiData: null }
+    }
     if (!res.ok) {
       return { ...ref, lookupStatus: 'not-found', lookupSource: 'google-books', apiData: null }
     }
