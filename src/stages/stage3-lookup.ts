@@ -18,9 +18,13 @@ const MIN_ACCEPT_SCORE = 0.65
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 async function lookupJournalArticle(ref: ParsedReference): Promise<LookupResult> {
-  // 1. DOI lookup — authoritative
+  // 1. DOI lookup — try CrossRef first, then OpenAlex (covers non-CrossRef DOIs e.g. datasets)
   if (ref.doi) {
-    return rateLimited(CR_DOMAIN, () => crossref.lookupByDOI(ref.doi!, ref))
+    const crDOIResult = await rateLimited(CR_DOMAIN, () => crossref.lookupByDOI(ref.doi!, ref))
+    if (crDOIResult.lookupStatus === 'found') return crDOIResult
+    const oaDOIResult = await rateLimited(OA_DOMAIN, () => openalex.lookupByDOI(ref.doi!, ref))
+    if (oaDOIResult.lookupStatus === 'found') return oaDOIResult
+    // Fall through to title+author search
   }
 
   // 2. CrossRef title+author search
@@ -87,6 +91,36 @@ async function lookupBookChapter(ref: ParsedReference): Promise<LookupResult> {
   return { ...ref, lookupStatus: 'not-found', lookupSource: null, apiData: null }
 }
 
+async function lookupOther(ref: ParsedReference): Promise<LookupResult> {
+  // Try journal-style APIs first
+  const crResult = await rateLimited(CR_DOMAIN, () => crossref.searchByTitleAuthor(ref))
+  if (crResult.lookupStatus === 'found' && crResult.apiData) {
+    const score = weightedTotal(scoreReference(ref, crResult.apiData))
+    if (score >= MIN_ACCEPT_SCORE) return crResult
+  }
+
+  const oaResult = await rateLimited(OA_DOMAIN, () => openalex.searchByTitleAuthor(ref))
+  if (oaResult.lookupStatus === 'found' && oaResult.apiData) {
+    const score = weightedTotal(scoreReference(ref, oaResult.apiData))
+    if (score >= MIN_ACCEPT_SCORE) return oaResult
+  }
+
+  // Try book-style APIs
+  const gbResult = await rateLimited(GB_DOMAIN, () => googlebooks.searchByTitleAuthor(ref))
+  if (gbResult.lookupStatus === 'found' && gbResult.apiData) {
+    const score = weightedTotal(scoreReference(ref, gbResult.apiData))
+    if (score >= MIN_ACCEPT_SCORE) return gbResult
+  }
+
+  const olResult = await rateLimited(OL_DOMAIN, () => openlibrary.searchByTitleAuthor(ref))
+  if (olResult.lookupStatus === 'found' && olResult.apiData) {
+    const score = weightedTotal(scoreReference(ref, olResult.apiData))
+    if (score >= MIN_ACCEPT_SCORE) return olResult
+  }
+
+  return { ...ref, lookupStatus: 'not-found', lookupSource: null, apiData: null }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function lookupReference(ref: ParsedReference): Promise<LookupResult> {
@@ -100,7 +134,7 @@ export async function lookupReference(ref: ParsedReference): Promise<LookupResul
     case 'website':
       return probeURL(ref)
     default:
-      // 'other' — try CrossRef as best guess
-      return rateLimited(CR_DOMAIN, () => crossref.searchByTitleAuthor(ref))
+      // 'other' — type couldn't be determined; try both journal and book APIs
+      return lookupOther(ref)
   }
 }

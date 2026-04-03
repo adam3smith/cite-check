@@ -4,6 +4,7 @@ export type LookupStatus = 'found' | 'not-found' | 'unverifiable' | 'error' | 'p
 export type LookupSource =
   | 'crossref-doi'
   | 'crossref-search'
+  | 'openalex-doi'
   | 'openalex'
   | 'openlibrary'
   | 'google-books'

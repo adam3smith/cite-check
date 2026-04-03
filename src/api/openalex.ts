@@ -87,6 +87,33 @@ function openAlexTypeToLocal(type: string): ReferenceType {
 
 // ── API calls ─────────────────────────────────────────────────────────────────
 
+export async function lookupByDOI(doi: string, ref: ParsedReference): Promise<LookupResult> {
+  const params = new URLSearchParams({
+    filter: `doi:${doi}`,
+    [MAILTO.split('=')[0]]: MAILTO.split('=')[1],
+  })
+  const url = `${BASE}/works?${params}`
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      return { ...ref, lookupStatus: 'not-found', lookupSource: 'openalex-doi', apiData: null }
+    }
+    const json = await res.json()
+    const results: OpenAlexWork[] = json.results ?? []
+    if (results.length === 0) {
+      return { ...ref, lookupStatus: 'not-found', lookupSource: 'openalex-doi', apiData: null }
+    }
+    return {
+      ...ref,
+      lookupStatus: 'found',
+      lookupSource: 'openalex-doi',
+      apiData: normalizeOpenAlexWork(results[0]),
+    }
+  } catch {
+    return { ...ref, lookupStatus: 'error', lookupSource: 'openalex-doi', apiData: null }
+  }
+}
+
 export async function searchByTitleAuthor(ref: ParsedReference): Promise<LookupResult> {
   const title = ref.title ?? ref.raw
   const authorLast = ref.authors[0]?.last ?? ''
