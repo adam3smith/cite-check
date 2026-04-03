@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cite-check — Reference List Validator</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+  </head>
+  <body>
+    <div id="app" x-data="citeCheckApp">
+
+      <!-- ── Header ──────────────────────────────────────────────────── -->
+      <header>
+        <h1>cite-check</h1>
+        <p class="subtitle">Academic Reference List Validator</p>
+      </header>
+
+      <!-- ── Input stage (stage 0) ──────────────────────────────────── -->
+      <main>
+        <section class="input-panel" x-show="stage === 0">
+          <label for="refInput">
+            Paste your reference list below. Works with numbered lists, hanging-indent, or
+            blank-line separated entries. Author-date styles (Chicago, APA) work best.
+          </label>
+          <textarea
+            id="refInput"
+            x-model="inputText"
+            placeholder="Acemoglu, Daron, Simon Johnson, and James A. Robinson. 2001. &quot;The Colonial Origins of Comparative Development.&quot; American Economic Review 91 (5): 1369–1401. https://doi.org/10.1257/aer.91.5.1369
+
+Thelen, Kathleen. 2004. How Institutions Evolve. Cambridge University Press.
+
+World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15, 2024. https://databank.worldbank.org/source/world-development-indicators."
+            rows="14"
+            spellcheck="false"
+          ></textarea>
+          <div class="input-actions">
+            <button class="btn btn-secondary" @click="fixLineBreaks()" :disabled="!inputText.trim()" title="Join wrapped lines from PDF copy-paste and remove row numbers">
+              Fix Line Breaks
+            </button>
+            <button class="btn btn-primary" @click="run()" :disabled="!inputText.trim()">
+              Validate References
+            </button>
+          </div>
+          <p class="error-msg" x-show="error" x-text="error"></p>
+
+          <details class="info-panel">
+            <summary>How it works</summary>
+            <ol>
+              <li><strong>Parse</strong> — splits your list into individual entries and classifies each as journal article, book, book chapter, website, or other.</li>
+              <li><strong>Extract</strong> — pulls out authors, year, title, journal/publisher, DOI, URL, and ISBN.</li>
+              <li><strong>Look up</strong> — queries CrossRef (articles), OpenLibrary + Google Books (books), and OpenAlex (fallback). Probes URLs for reachability.</li>
+              <li><strong>Verify</strong> — scores each reference against what was found using weighted field matching (title 40%, author 30%, year 15%, journal 10%, pages 5%). Formats the canonical Chicago Author-Date citation.</li>
+            </ol>
+            <p class="note">
+              URL checking is limited by browser security: most URLs show "unverifiable" rather than pass/fail
+              because the browser cannot read responses from other origins. A network failure (DNS error) is
+              reported as "not found."
+            </p>
+          </details>
+        </section>
+
+        <!-- ── Progress (stages 1–4) ───────────────────────────────── -->
+        <section class="progress-panel" x-show="stage > 0 && stage < 5">
+          <p class="status-msg" x-text="statusMessage"></p>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" :style="`width: ${progress}%`"></div>
+          </div>
+          <p class="progress-label" x-text="`${total} reference${total !== 1 ? 's' : ''} processed`" x-show="total > 0"></p>
+
+          <!-- Partial results stream in during processing -->
+          <div class="partial-results" x-show="references.length > 0">
+            <template x-for="ref in references" :key="ref.index">
+              <div class="ref-card ref-card-compact" :class="`status-${ref.verificationStatus}`">
+                <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
+                <span class="ref-type" x-text="ref.type"></span>
+                <span class="ref-raw" x-text="(ref.title ?? ref.raw).slice(0, 80) + ((ref.title ?? ref.raw).length > 80 ? '…' : '')"></span>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <!-- ── Results (stage 5) ───────────────────────────────────── -->
+        <section class="results-panel" x-show="stage === 5">
+          <div class="results-header">
+            <h2 x-text="`${references.length} Reference${references.length !== 1 ? 's' : ''} Checked`"></h2>
+            <div class="results-actions">
+              <button class="btn btn-secondary" @click="copyVerified()" x-show="verified.length > 0">
+                Copy Verified (<span x-text="verified.length"></span>)
+              </button>
+              <button class="btn btn-secondary" @click="exportCSV()">Export CSV</button>
+              <button class="btn btn-outline" @click="reset()">Start Over</button>
+            </div>
+          </div>
+
+          <!-- Verified -->
+          <div class="result-section" x-show="verified.length > 0">
+            <h3 class="section-heading verified-heading">
+              ✓ Verified References (<span x-text="verified.length"></span>)
+            </h3>
+            <template x-for="ref in verified" :key="ref.index">
+              <div class="ref-card" :class="`status-${ref.verificationStatus}`">
+                <div class="ref-card-main" @click="toggleExpand(ref.index)" style="cursor:pointer">
+                  <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
+                  <span class="ref-type" x-text="ref.type"></span>
+                  <p class="ref-citation" x-text="ref.formattedCitation ?? ref.raw"></p>
+                  <template x-if="ref.discrepancies.length > 0">
+                    <p class="discrepancy-hint">
+                      ⚠ <span x-text="ref.discrepancies.length"></span> <span x-text="ref.discrepancies.some(d => d.severity === 'major') ? 'major' : 'minor'"></span> discrepanc<span x-text="ref.discrepancies.length === 1 ? 'y' : 'ies'"></span> — click to review
+                    </p>
+                  </template>
+                </div>
+                <div class="ref-card-detail" x-show="expandedIndex === ref.index">
+                  <div class="detail-row">
+                    <span class="detail-label">Original input:</span>
+                    <span class="detail-value" x-text="ref.raw"></span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Match score:</span>
+                    <span class="detail-value" x-text="`${(ref.matchScore * 100).toFixed(0)}%`"></span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">Source:</span>
+                    <span class="detail-value" x-text="ref.lookupSource ?? 'unknown'"></span>
+                  </div>
+                  <template x-if="ref.discrepancies.length > 0">
+                    <div class="discrepancies">
+                      <span class="detail-label">Discrepancies:</span>
+                      <template x-for="d in ref.discrepancies" :key="d.field">
+                        <div class="discrepancy-item" :class="`severity-${d.severity}`">
+                          <strong x-text="d.field + ':'"></strong>
+                          <span x-text="`Input: ${d.input}`"></span>
+                          <span x-text="`Found: ${d.found}`"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Unverified -->
+          <div class="result-section" x-show="unverified.length > 0">
+            <h3 class="section-heading unverified-heading">
+              ✗ Unverified References (<span x-text="unverified.length"></span>)
+            </h3>
+
+            <template x-for="(group, statusLabel) in unverifiedByStatus" :key="statusLabel">
+              <div class="unverified-group">
+                <h4 class="group-heading" x-text="`${statusLabel} (${group.length})`"></h4>
+                <template x-for="ref in group" :key="ref.index">
+                  <div class="ref-card unverified-card" @click="toggleExpand(ref.index)" style="cursor:pointer">
+                    <div class="ref-card-main">
+                      <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
+                      <span class="ref-type" x-text="ref.type"></span>
+                      <p class="ref-citation" x-text="ref.raw"></p>
+                    </div>
+                    <div class="ref-card-detail" x-show="expandedIndex === ref.index">
+                      <div class="detail-row" x-show="ref.title">
+                        <span class="detail-label">Parsed title:</span>
+                        <span class="detail-value" x-text="ref.title"></span>
+                      </div>
+                      <div class="detail-row" x-show="ref.authors.length > 0">
+                        <span class="detail-label">Parsed authors:</span>
+                        <span class="detail-value" x-text="ref.authors.map(a => a.last).join(', ')"></span>
+                      </div>
+                      <div class="detail-row" x-show="ref.doi">
+                        <span class="detail-label">DOI found:</span>
+                        <a class="detail-value" :href="`https://doi.org/${ref.doi}`" target="_blank" x-text="ref.doi"></a>
+                      </div>
+                      <div class="detail-row" x-show="ref.url">
+                        <span class="detail-label">URL:</span>
+                        <a class="detail-value" :href="ref.url" target="_blank" x-text="ref.url"></a>
+                      </div>
+                      <template x-if="ref.apiData && ref.matchScore > 0">
+                        <div>
+                          <div class="detail-row">
+                            <span class="detail-label">Best match found (<span x-text="`${(ref.matchScore * 100).toFixed(0)}%`"></span>):</span>
+                            <span class="detail-value" x-text="ref.apiData.title"></span>
+                          </div>
+                          <div class="discrepancies">
+                            <template x-for="d in ref.discrepancies" :key="d.field">
+                              <div class="discrepancy-item" :class="`severity-${d.severity}`">
+                                <strong x-text="d.field + ':'"></strong>
+                                <span x-text="`Input: ${d.input}`"></span>
+                                <span x-text="`Found: ${d.found}`"></span>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                      <template x-if="ref.verificationStatus === 'unverifiable' && ref.type === 'website'">
+                        <p class="note">
+                          URL checking from the browser is limited: cross-origin requests return
+                          an opaque response — the URL is reachable but we cannot confirm the HTTP status code.
+                          Only DNS failures or network errors are reported as "not found."
+                        </p>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          cite-check queries
+          <a href="https://www.crossref.org/" target="_blank">CrossRef</a>,
+          <a href="https://openalex.org/" target="_blank">OpenAlex</a>,
+          <a href="https://openlibrary.org/" target="_blank">OpenLibrary</a>, and
+          <a href="https://books.google.com/" target="_blank">Google Books</a>
+          to verify references. All queries are made directly from your browser;
+          no data passes through any intermediary server.
+        </p>
+        <p>
+          Created by <a href="https://github.com/karchlab" target="_blank">Sebastian Karcher</a>
+          with <a href="https://claude.ai/code" target="_blank">Claude Code</a>.
+          <a href="https://github.com/karchlab/cite-check/blob/main/LICENSE" target="_blank">MIT License</a>.
+        </p>
+      </footer>
+
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
