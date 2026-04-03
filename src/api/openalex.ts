@@ -124,7 +124,7 @@ export async function searchByTitleAuthor(ref: ParsedReference): Promise<LookupR
     [MAILTO.split('=')[0]]: MAILTO.split('=')[1],
   })
   if (authorLast) {
-    params.set('filter', `author.display_name.search:${authorLast}`)
+    params.set('filter', `raw_author_name.search:${authorLast}`)
   }
 
   const url = `${BASE}/works?${params}`
