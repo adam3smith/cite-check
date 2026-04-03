@@ -109,17 +109,45 @@ export function fieldScore(input: string | null | undefined, found: string | nul
  * correctly distinguishes these because it requires shared meaningful words, not just
  * shared characters.
  *
- * Using the minimum (rather than average) would be stricter; the average is a reasonable
- * middle ground that still rewards near-identical titles highly.
+ * Subtitle truncation bonus: some sources (e.g. OpenLibrary) return only the main title
+ * without the subtitle. After normalization the colon is stripped, so "Tyranny of the
+ * Minority" becomes a literal prefix of the full normalized title. When one normalized
+ * title is a prefix of the other and is at least 25% of its length, we treat that as a
+ * near-match (0.92) rather than penalizing the missing subtitle tokens in Jaccard.
  */
 export function titleFieldScore(input: string | null | undefined, found: string | null | undefined): number {
   if (input == null || found == null) return 0
   const a = normalizeForComparison(input)
   const b = normalizeForComparison(found)
   if (!a || !b) return 0
+
+  // Subtitle truncation: one title is a strict prefix of the other (different lengths).
+  // Some sources (e.g. OpenLibrary) return only the main title; after normalization the
+  // colon disappears so the shorter title is a literal prefix of the full normalized form.
+  if (a !== b) {
+    const shorter = a.length < b.length ? a : b
+    const longer  = a.length < b.length ? b : a
+    if (shorter.length >= 10 && longer.startsWith(shorter) && shorter.length / longer.length >= 0.25) {
+      return 0.92
+    }
+  }
+
   const jw = jaroWinkler(a, b)
   const jaccard = tokenJaccard(a, b)
   return (jw + jaccard) / 2
+}
+
+/**
+ * Strip a leading "City: " or "City, State: " prefix from a publisher string.
+ * Chicago-style book references often include the place of publication ("New York: Crown"),
+ * but API sources typically return only the publisher name ("Crown").
+ */
+export function normalizePublisher(s: string | null | undefined): string | null {
+  if (!s) return s ?? null
+  // Match title-cased words (optionally with comma+state abbreviation) followed by colon
+  // e.g. "New York: Crown", "Cambridge, MA: Harvard University Press"
+  const m = s.match(/^[A-Z][A-Za-z\s,]+:\s+(.+)/)
+  return m ? m[1].trim() : s
 }
 
 /** Score year: 1.0 for exact match, 0.5 for ±1 year (online-first / print lag), 0 otherwise */
@@ -157,7 +185,7 @@ export function scoreReference(
     author: authorScore(parsed.authors, apiData.authors),
     title: titleFieldScore(parsed.title, apiData.title),
     year: yearScore(parsed.year, apiData.year),
-    container: fieldScore(parsed.container, apiData.container),
+    container: fieldScore(normalizePublisher(parsed.container), normalizePublisher(apiData.container)),
     pages: fieldScore(parsed.pages, apiData.pages),
   }
 }

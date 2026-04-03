@@ -9,6 +9,7 @@ import {
   weightedTotal,
   scoreToStatus,
   normalizeForComparison,
+  normalizePublisher,
 } from '../src/lib/string-distance'
 import type { ParsedReference, NormalizedWork } from '../src/types'
 
@@ -47,6 +48,23 @@ describe('jaroWinkler', () => {
   })
   it('scores "American Economic Review" vs "Amer. Econ. Rev." above 0.75', () => {
     expect(jaroWinkler('american economic review', 'amer econ rev')).toBeGreaterThan(0.75)
+  })
+})
+
+// ── normalizePublisher ────────────────────────────────────────────────────────
+
+describe('normalizePublisher', () => {
+  it('strips city prefix from "City: Publisher"', () => {
+    expect(normalizePublisher('New York: Crown')).toBe('Crown')
+  })
+  it('strips city+state prefix', () => {
+    expect(normalizePublisher('Cambridge, MA: Harvard University Press')).toBe('Harvard University Press')
+  })
+  it('leaves plain publisher names unchanged', () => {
+    expect(normalizePublisher('Princeton University Press')).toBe('Princeton University Press')
+  })
+  it('returns null for null input', () => {
+    expect(normalizePublisher(null)).toBeNull()
   })
 })
 
@@ -124,6 +142,14 @@ describe('titleFieldScore', () => {
     const input = 'The impact of ignoring multiple membership data structures in multilevel models'
     const found = 'The Generalized Multilevel Facets Model for Longitudinal Data'
     expect(titleFieldScore(input, found)).toBeLessThan(0.6)
+  })
+
+  it('scores main-title-only match (subtitle truncation) at 0.92', () => {
+    // OpenLibrary often returns only the main title without subtitle
+    const full = 'Tyranny of the Minority: Why American Democracy Reached the Breaking Point'
+    const mainOnly = 'Tyranny of the Minority'
+    expect(titleFieldScore(full, mainOnly)).toBe(0.92)
+    expect(titleFieldScore(mainOnly, full)).toBe(0.92) // symmetric
   })
 
   it('returns 0 for null inputs', () => {
