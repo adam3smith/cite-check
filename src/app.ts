@@ -166,8 +166,12 @@ export function citeCheckApp(): CiteCheckApp {
 
       // Step 2: join continuation lines.
       // A line break is "real" when the preceding line ends with a period/sentence-ending
-      // punctuation, ends with a URL, or the line is blank (reference separator).
-      // Everything else is a soft wrap from PDF copy-paste and gets joined with a space.
+      // punctuation, ends with a complete URL, or the line is blank (reference separator).
+      // URL-continuation rules (common in PDF copy-paste):
+      //   - Line ending with `-`: never a real break (URLs don't end in hyphens)
+      //   - Line ending with `/`: real break only if next line starts with a capital letter
+      //     (a URL path ending in / is common, but continuation lines start lowercase)
+      // Everything else is a soft wrap and gets joined with a space.
       const result: string[] = []
       let buffer = ''
 
@@ -186,15 +190,43 @@ export function citeCheckApp(): CiteCheckApp {
           continue
         }
 
-        const endsWithPeriod = /[.!?]\s*$/.test(buffer)
-        const endsWithUrl = /https?:\/\/\S+\s*$/.test(buffer)
+        const trimmed = buffer.trimEnd()
+        const nextTrimmed = line.trimStart()
 
-        if (endsWithPeriod || endsWithUrl) {
+        // Check if the buffer currently ends with a URL fragment
+        const urlFragMatch = trimmed.match(/(https?:\/\/\S*)$/)
+
+        if (urlFragMatch) {
+          const frag = urlFragMatch[1]
+          // Broken URL: ends with -, /, or . and next line starts with lowercase/digit
+          // (e.g. "10.1080/\n025..." or "j.\naper." or "00388-\nx.")
+          if (
+            frag.endsWith('-') ||
+            ((frag.endsWith('/') || frag.endsWith('.')) && /^[a-z0-9]/.test(nextTrimmed))
+          ) {
+            buffer = trimmed + nextTrimmed  // join without space
+            continue
+          }
+          // Complete URL at end of line — real break
+          result.push(buffer)
+          buffer = line
+          continue
+        }
+
+        // Next line starts with a URL — it belongs to the current reference
+        // (URL was soft-wrapped onto its own line, e.g. "...127.\nhttps://doi.org/...")
+        if (/^https?:\/\//.test(nextTrimmed)) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // Standard logic: sentence-ending punctuation = real break, otherwise soft wrap
+        const endsWithPeriod = /[.!?]\s*$/.test(buffer)
+        if (endsWithPeriod) {
           result.push(buffer)
           buffer = line
         } else {
-          // Soft wrap: join with a single space
-          buffer = buffer.trimEnd() + ' ' + line.trimStart()
+          buffer = trimmed + ' ' + nextTrimmed
         }
       }
 
