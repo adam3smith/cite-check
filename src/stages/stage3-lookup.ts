@@ -7,6 +7,8 @@ import * as googlebooks from '../api/googlebooks'
 import { probeURL } from '../api/url-check'
 import { scoreReference, weightedTotal } from '../lib/string-distance'
 
+export { resetGoogleBooksQuota } from '../api/googlebooks'
+
 const CR_DOMAIN = 'api.crossref.org'
 const OA_DOMAIN = 'api.openalex.org'
 const OL_DOMAIN = 'openlibrary.org'
@@ -52,15 +54,7 @@ async function lookupBook(ref: ParsedReference): Promise<LookupResult> {
     if (olResult.lookupStatus === 'found') return olResult
   }
 
-  // 2. Google Books title+author search (handles subtitle split better than OpenLibrary)
-  const gbResult = await rateLimited(GB_DOMAIN, () => googlebooks.searchByTitleAuthor(ref))
-  if (gbResult.lookupStatus === 'found' && gbResult.apiData) {
-    const score = weightedTotal(scoreReference(ref, gbResult.apiData))
-    console.log('[lookup] googlebooks score:', score.toFixed(3), gbResult.apiData.title)
-    if (score >= MIN_ACCEPT_SCORE) return gbResult
-  }
-
-  // 3. OpenLibrary fallback
+  // 2. OpenLibrary title+author search
   const olSearchResult = await rateLimited(OL_DOMAIN, () =>
     openlibrary.searchByTitleAuthor(ref),
   )
@@ -68,6 +62,16 @@ async function lookupBook(ref: ParsedReference): Promise<LookupResult> {
     const score = weightedTotal(scoreReference(ref, olSearchResult.apiData))
     console.log('[lookup] openlibrary score:', score.toFixed(3), olSearchResult.apiData.title)
     if (score >= MIN_ACCEPT_SCORE) return olSearchResult
+  }
+
+  // 3. Google Books fallback (skip if daily quota is exhausted)
+  if (!googlebooks.isGoogleBooksQuotaExhausted()) {
+    const gbResult = await rateLimited(GB_DOMAIN, () => googlebooks.searchByTitleAuthor(ref))
+    if (gbResult.lookupStatus === 'found' && gbResult.apiData) {
+      const score = weightedTotal(scoreReference(ref, gbResult.apiData))
+      console.log('[lookup] googlebooks score:', score.toFixed(3), gbResult.apiData.title)
+      if (score >= MIN_ACCEPT_SCORE) return gbResult
+    }
   }
 
   return { ...ref, lookupStatus: 'not-found', lookupSource: null, apiData: null }
@@ -105,17 +109,19 @@ async function lookupOther(ref: ParsedReference): Promise<LookupResult> {
     if (score >= MIN_ACCEPT_SCORE) return oaResult
   }
 
-  // Try book-style APIs
-  const gbResult = await rateLimited(GB_DOMAIN, () => googlebooks.searchByTitleAuthor(ref))
-  if (gbResult.lookupStatus === 'found' && gbResult.apiData) {
-    const score = weightedTotal(scoreReference(ref, gbResult.apiData))
-    if (score >= MIN_ACCEPT_SCORE) return gbResult
-  }
-
+  // Try book-style APIs (OL first; GB only if quota not exhausted)
   const olResult = await rateLimited(OL_DOMAIN, () => openlibrary.searchByTitleAuthor(ref))
   if (olResult.lookupStatus === 'found' && olResult.apiData) {
     const score = weightedTotal(scoreReference(ref, olResult.apiData))
     if (score >= MIN_ACCEPT_SCORE) return olResult
+  }
+
+  if (!googlebooks.isGoogleBooksQuotaExhausted()) {
+    const gbResult = await rateLimited(GB_DOMAIN, () => googlebooks.searchByTitleAuthor(ref))
+    if (gbResult.lookupStatus === 'found' && gbResult.apiData) {
+      const score = weightedTotal(scoreReference(ref, gbResult.apiData))
+      if (score >= MIN_ACCEPT_SCORE) return gbResult
+    }
   }
 
   return { ...ref, lookupStatus: 'not-found', lookupSource: null, apiData: null }

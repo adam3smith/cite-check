@@ -55,7 +55,9 @@ function normalizeOpenLibraryWork(doc: OpenLibraryDoc): NormalizedWork {
 // ── API calls ─────────────────────────────────────────────────────────────────
 
 export async function searchByTitleAuthor(ref: ParsedReference): Promise<LookupResult> {
-  const title = ref.title ?? ref.raw
+  // Strip subtitle — OpenLibrary metadata often lacks subtitles and the mismatch hurts search
+  const fullTitle = ref.title ?? ref.raw
+  const title = fullTitle.split(':')[0].trim()
   const authorLast = ref.authors[0]?.last ?? ''
 
   const params = new URLSearchParams({

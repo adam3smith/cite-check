@@ -1,6 +1,6 @@
 import { parseReferenceList } from './stages/stage1-parse'
 import { extractFields } from './stages/stage2-extract'
-import { lookupReference } from './stages/stage3-lookup'
+import { lookupReference, resetGoogleBooksQuota } from './stages/stage3-lookup'
 import { verifyReference } from './stages/stage4-verify'
 import { initCitationFormat } from './lib/citation-format'
 import { resetAllQueues } from './lib/rate-limiter'
@@ -148,6 +148,7 @@ export function citeCheckApp(): CiteCheckApp {
 
     reset() {
       resetAllQueues()
+      resetGoogleBooksQuota()
       this.inputText = ''
       this.stage = 0 as Stage
       this.progress = 0

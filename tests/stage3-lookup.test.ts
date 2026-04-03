@@ -42,7 +42,7 @@ function makeRef(overrides: Partial<ParsedReference> = {}): ParsedReference {
  * API data whose fields closely match makeRef() — weighted score well above 0.65.
  * author=1.0 (0.30) + title=1.0 (0.40) + year=1.0 (0.15) + container≈1 (0.10) + pages=1.0 (0.05) ≈ 1.0
  */
-function goodMatch(): NormalizedWork {
+function goodMatch(overrides: Partial<NormalizedWork> = {}): NormalizedWork {
   return {
     title: 'The Road to Better Redistricting',
     authors: [{ last: 'Litton', first: 'Noah' }],
@@ -56,6 +56,7 @@ function goodMatch(): NormalizedWork {
     url: null,
     type: 'journal-article',
     raw: {},
+    ...overrides,
   }
 }
 
@@ -211,7 +212,12 @@ describe('lookupJournalArticle — DOI path', () => {
   it('falls through to title+author search when both DOI lookups fail', async () => {
     vi.mocked(crossref.lookupByDOI).mockResolvedValue(notFound(ref, 'crossref-doi'))
     vi.mocked(openalex.lookupByDOI).mockResolvedValue(notFound(ref, 'openalex-doi'))
-    vi.mocked(crossref.searchByTitleAuthor).mockResolvedValue(found(ref, 'crossref-search', goodMatch()))
+    // goodMatch must match the DOI-test ref (Kenny/Simulated redistricting), not the default makeRef
+    vi.mocked(crossref.searchByTitleAuthor).mockResolvedValue(found(ref, 'crossref-search', goodMatch({
+      title: ref.title!,
+      authors: ref.authors,
+      container: 'Harvard Dataverse',
+    })))
     const result = await lookupReference(ref)
     expect(result.lookupStatus).toBe('found')
     expect(result.lookupSource).toBe('crossref-search')
