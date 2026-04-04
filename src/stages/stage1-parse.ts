@@ -62,14 +62,32 @@ export function classifyType(raw: string): { type: ReferenceType; confidence: Co
 
 // ── Splitting strategies ──────────────────────────────────────────────────────
 
-/** Split a numbered list: 1. / 1) / [1] / 1] patterns */
+/** Split a numbered list: 1. / 1) / [1] / 1] patterns.
+ *  Restricted to 1–3 digit numbers so 4-digit years (e.g. "2019. Title...")
+ *  at the start of a continuation line never trigger this strategy.
+ *
+ *  Sanity check: only use numbered splitting if the marker count is close to
+ *  the blank-line entry count. If blank-line splitting yields many more entries
+ *  than numbered markers (ratio < 0.6), the numbers are incidental (e.g. a page
+ *  number or date fragment) and we fall through to blank-line splitting instead.
+ */
 function splitNumbered(text: string): string[] | null {
-  const marker = /^\s*\[?\d+[\].)]\s+/m
+  const marker = /^\s*\[?\d{1,3}[\].)]\s+/m
   if (!marker.test(text)) return null
-  return text
-    .split(/(?=^\s*\[?\d+[\].)]\s+)/m)
-    .map((s) => s.replace(/^\s*\[?\d+[\].)]\s+/, '').trim())
+
+  const numbered = text
+    .split(/(?=^\s*\[?\d{1,3}[\].)]\s+)/m)
+    .map((s) => s.replace(/^\s*\[?\d{1,3}[\].)]\s+/, '').trim())
     .filter(Boolean)
+
+  // If blank-line splitting would give substantially more entries, the numbered
+  // markers are probably spurious — don't use them.
+  const blankLineCandidates = text.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
+  if (blankLineCandidates.length > 1 && numbered.length / blankLineCandidates.length < 0.6) {
+    return null
+  }
+
+  return numbered
 }
 
 /** Split blank-line separated entries */

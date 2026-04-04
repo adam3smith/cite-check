@@ -43,6 +43,38 @@ describe('splitIntoEntries', () => {
     const single = 'Pierson, Paul. 2000. "Increasing Returns." American Political Science Review 94 (2): 251–267.'
     expect(splitIntoEntries(single)).toHaveLength(1)
   })
+
+  it('does not treat a 4-digit year at the start of a line as a numbered-list marker', () => {
+    const text = [
+      'Iyengar, Shanto, et al.',
+      '',
+      '2019. "The Origins and Consequences of Affective Polarization." Annual Review of Political Science 22: 129–46.',
+      '',
+      'Mason, Lilliana. 2018. Uncivil Agreement. University of Chicago Press.',
+    ].join('\n')
+    const entries = splitIntoEntries(text)
+    expect(entries).not.toHaveLength(2)
+    expect(entries.some((e) => e.includes('2019'))).toBe(true)
+  })
+
+  it('ignores spurious numbered markers when blank-line count greatly exceeds marker count', () => {
+    // Large blank-line separated list with only one or two lines that happen to
+    // start with a small number (e.g. "2. a second point" in a title, or "1." page ref).
+    // The numbered splitter should not win over blank-line splitting.
+    const refs = [
+      'Author A. 2020. "Title one." Journal 1 (1): 1–10.',
+      'Author B. 2021. "Title two." Journal 2 (2): 11–20.',
+      'Author C. 2022. "Title three." Journal 3 (3): 21–30.',
+      'Author D. 2023. "Title four." Journal 4 (4): 31–40.',
+      'Author E. 2024. "Title five." Journal 5 (5): 41–50.',
+    ]
+    // Insert one entry starting with "1." to simulate an accidental marker
+    refs[2] = '1. Author C. 2022. "Title three." Journal 3 (3): 21–30.'
+    const text = refs.join('\n\n')
+    const entries = splitIntoEntries(text)
+    // Should produce 5 entries (blank-line split), not 2 (numbered split on "1.")
+    expect(entries).toHaveLength(5)
+  })
 })
 
 // ── Type classification ───────────────────────────────────────────────────────
