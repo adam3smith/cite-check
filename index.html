@@ -37,10 +37,26 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
             <button class="btn btn-secondary" @click="fixLineBreaks()" :disabled="!inputText.trim()" title="Join wrapped lines from PDF copy-paste and remove row numbers">
               Fix Line Breaks
             </button>
+            <button class="btn btn-secondary" @click="showPreview = !showPreview" :disabled="!inputText.trim()">
+              <span x-text="showPreview ? 'Hide Preview' : 'Preview Structure'"></span>
+              <span x-show="parsedEntries.length > 0" x-text="`(${parsedEntries.length})`" style="font-weight:400; opacity:0.75"></span>
+            </button>
             <button class="btn btn-primary" @click="run()" :disabled="!inputText.trim()">
               Validate References
             </button>
           </div>
+
+          <div class="structure-preview" x-show="showPreview && parsedEntries.length > 0">
+            <p class="structure-preview-header">
+              <span x-text="parsedEntries.length"></span> reference<span x-text="parsedEntries.length !== 1 ? 's' : ''"></span> detected
+            </p>
+            <ol class="structure-preview-list">
+              <template x-for="entry in parsedEntries" :key="entry.index">
+                <li class="structure-preview-entry" x-text="entry.raw"></li>
+              </template>
+            </ol>
+          </div>
+
           <p class="error-msg" x-show="error" x-text="error"></p>
 
           <details class="info-panel">

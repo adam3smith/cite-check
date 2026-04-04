@@ -25,6 +25,8 @@ export interface CiteCheckApp {
   readonly unverified: VerifiedReference[]
   readonly unverifiedByStatus: Record<string, VerifiedReference[]>
   readonly total: number
+  readonly parsedEntries: { index: number; raw: string }[]
+  showPreview: boolean
 
   // Actions
   run(): Promise<void>
@@ -52,6 +54,7 @@ export function citeCheckApp(): CiteCheckApp {
     references: [],
     error: null,
     expandedIndex: null,
+    showPreview: false,
 
     get verified() {
       return this.references.filter(
@@ -77,6 +80,11 @@ export function citeCheckApp(): CiteCheckApp {
 
     get total() {
       return this.references.length
+    },
+
+    get parsedEntries() {
+      if (!this.inputText.trim()) return []
+      return parseReferenceList(this.inputText)
     },
 
     async run() {
@@ -156,6 +164,7 @@ export function citeCheckApp(): CiteCheckApp {
       this.references = []
       this.error = null
       this.expandedIndex = null
+      this.showPreview = false
     },
 
     fixLineBreaks() {

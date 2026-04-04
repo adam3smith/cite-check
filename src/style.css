@@ -184,6 +184,51 @@ footer a:hover { text-decoration: underline; }
   border-radius: 0 4px 4px 0;
 }
 
+/* ── Structure preview ─────────────────────────────────────────────────────── */
+
+.structure-preview {
+  margin-top: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.structure-preview-header {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.structure-preview-list {
+  list-style: decimal;
+  padding: 0.5rem 0.9rem 0.5rem 2.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.structure-preview-entry {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--color-border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.structure-preview-entry:last-child {
+  border-bottom: none;
+}
+
 /* ── Progress panel ────────────────────────────────────────────────────────── */
 
 .progress-panel {
