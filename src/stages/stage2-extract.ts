@@ -52,11 +52,12 @@ export function extractURL(text: string): string | null {
  *  Also handles letter suffixes for multiple works in same year: (2024a), (2024b).
  */
 export function extractYear(text: string): string | null {
-  // APA: (YYYY) or (YYYY, ... or (YYYYa) / (YYYYb) disambiguators
-  let m = text.match(/\((\d{4})[a-z,)]/)
+  // APA: (YYYY) or (YYYYa) / (YYYYb) disambiguators
+  // Restrict to plausible year range — prevents matching issue numbers like (6516) or (7945)
+  let m = text.match(/\((1[5-9]\d\d|20\d\d)[a-z,)]/)
   if (m) return m[1]
   // Chicago author-date: `. YYYY.` or `. YYYY:`
-  m = text.match(/[.;,]\s+(\d{4})[.,:]/)
+  m = text.match(/[.;,]\s+(1[5-9]\d\d|20\d\d)[.,:]/)
   if (m) return m[1]
   // Fall back to any 4-digit year 1500–2099
   m = text.match(/\b(1[5-9]\d\d|20\d\d)\b/)

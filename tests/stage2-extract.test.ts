@@ -82,6 +82,14 @@ describe('extractYear', () => {
   it('extracts year from APA disambiguator suffix (2024b)', () => {
     expect(extractYear('Bernardi, L. (2024b). Not in the mood.')).toBe('2024')
   })
+  it('does not mistake a 4-digit issue number for a year', () => {
+    // Science 370 (6516) — issue number 6516 is not a valid year
+    expect(extractYear('Finkel et al. 2020. "Political Sectarianism." Science 370 (6516): 533–36.')).toBe('2020')
+  })
+  it('does not mistake a 4-digit issue number for a year (Nature)', () => {
+    // Nature 613 (7945) — issue number 7945 is not a valid year
+    expect(extractYear('Bor et al. 2023. "Discriminatory Attitudes." Nature 613 (7945): 704–11.')).toBe('2023')
+  })
   it('returns null when no year', () => {
     expect(extractYear('No year here at all in this text.')).toBeNull()
   })
