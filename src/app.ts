@@ -202,16 +202,24 @@ export function citeCheckApp(): CiteCheckApp {
         const trimmed = buffer.trimEnd()
         const nextTrimmed = line.trimStart()
 
-        // Check if the buffer currently ends with a URL fragment
+        // Lines starting with "URL:" always belong to the current reference —
+        // check this before any punctuation-based break logic
+        if (/^URL:\s*/i.test(nextTrimmed)) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // URL fragment checks must come before the short-line check so that
+        // broken URL continuations ("aper.", "x.") join without a space.
         const urlFragMatch = trimmed.match(/(https?:\/\/\S*)$/)
 
         if (urlFragMatch) {
           const frag = urlFragMatch[1]
-          // Broken URL: ends with -, /, or . and next line starts with lowercase/digit
-          // (e.g. "10.1080/\n025..." or "j.\naper." or "00388-\nx.")
           if (
             frag.endsWith('-') ||
-            ((frag.endsWith('/') || frag.endsWith('.')) && /^[a-z0-9]/.test(nextTrimmed))
+            ((frag.endsWith('/') || frag.endsWith('.')) && /^[a-z0-9]/.test(nextTrimmed)) ||
+            /^_/.test(nextTrimmed) ||  // underscore-continuation (e.g. _Rd.pdf.)
+            /^[a-zA-Z0-9]{1,5}\.?$/.test(nextTrimmed)  // short path fragment (e.g. "8." or "x.")
           ) {
             buffer = trimmed + nextTrimmed  // join without space
             continue
@@ -223,8 +231,58 @@ export function citeCheckApp(): CiteCheckApp {
         }
 
         // Next line starts with a URL — it belongs to the current reference
-        // (URL was soft-wrapped onto its own line, e.g. "...127.\nhttps://doi.org/...")
         if (/^https?:\/\//.test(nextTrimmed)) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // If the buffer contains a URL (including space-mangled "https: //") and the
+        // next line looks like a new author-date reference (Lastname, Firstname), break.
+        // Restricted to URL context — otherwise multi-author continuations like
+        // "Altman, Michael..." get wrongly split.
+        const bufferHasUrl = /https?/i.test(trimmed) || /URL:/i.test(trimmed)
+        const nextIsNewRef = /^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][a-zA-ZÀ-ÖØ-öø-ÿ'\-]+(?: [A-Z][a-zA-Z]+)?,\s/.test(nextTrimmed)
+        if (bufferHasUrl && nextIsNewRef) {
+          result.push(buffer)
+          buffer = line
+          continue
+        }
+
+        // Short next line (≤3 words) that doesn't look like a new reference —
+        // join it even if the buffer ends with a period.
+        // Catches publisher lines like "Cambridge University Press." after a book title.
+        const nextWordCount = nextTrimmed.split(/\s+/).filter(Boolean).length
+        if (nextWordCount <= 3 && !nextIsNewRef) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // Pattern A: current line ends with a 4-digit year + period → always continuation
+        // (author chain + year, title follows on next line)
+        if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // Pattern B: next line starts with a 4-digit year + period/comma → continuation
+        // (author chain wrapped, year begins the next line)
+        if (/^(1[5-9]\d\d|20\d\d)[.,]\s/.test(nextTrimmed)) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // Pattern C: next line has volume-issue notation within first 50 chars → journal continuation
+        // e.g. "Comparative Politics 51 (3):" or "Studies in Comparative... 48 (3):"
+        if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50))) {
+          buffer = trimmed + ' ' + nextTrimmed
+          continue
+        }
+
+        // Pattern D: next line has ≤4 words before a DOI → publisher/journal + DOI continuation
+        // e.g. "Cambridge University Press. https://doi.org/10.1017/..."
+        // Avoids matching a full new reference like "Smith, J. 2020. Title. https://doi.org/..."
+        const wordsBeforeDoi = nextTrimmed.match(/^((?:\S+\s+){0,3}\S+)\s+(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:|10\.\d{4,}\/)/)
+        if (wordsBeforeDoi) {
           buffer = trimmed + ' ' + nextTrimmed
           continue
         }

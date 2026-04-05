@@ -72,18 +72,26 @@ export function classifyType(raw: string): { type: ReferenceType; confidence: Co
  *  number or date fragment) and we fall through to blank-line splitting instead.
  */
 function splitNumbered(text: string): string[] | null {
-  const marker = /^\s*\[?\d{1,3}[\].)]\s+/m
+  // Use [ \t]+ (no newlines) so a bare "8." on its own line is never treated as a marker
+  const marker = /^\s*\[?\d{1,3}[\].)][  \t]+\S/m
   if (!marker.test(text)) return null
 
   const numbered = text
-    .split(/(?=^\s*\[?\d{1,3}[\].)]\s+)/m)
-    .map((s) => s.replace(/^\s*\[?\d{1,3}[\].)]\s+/, '').trim())
+    .split(/(?=^\s*\[?\d{1,3}[\].)][  \t]+)/m)
+    .map((s) => s.replace(/^\s*\[?\d{1,3}[\].)][  \t]+/, '').trim())
     .filter(Boolean)
 
-  // If blank-line splitting would give substantially more entries, the numbered
-  // markers are probably spurious — don't use them.
+  // Sanity check 1: blank-line candidates greatly exceed marker count
   const blankLineCandidates = text.split(/\n\s*\n+/).map((s) => s.trim()).filter(Boolean)
   if (blankLineCandidates.length > 1 && numbered.length / blankLineCandidates.length < 0.6) {
+    return null
+  }
+
+  // Sanity check 2: total non-empty lines greatly exceed marker count.
+  // Catches single-newline-separated lists (e.g. after Fix Line Breaks) where
+  // an incidental "8." on its own line would otherwise win over 60 references.
+  const totalLines = text.split('\n').filter((l) => l.trim()).length
+  if (totalLines > numbered.length && numbered.length / totalLines < 0.2) {
     return null
   }
 
@@ -137,7 +145,13 @@ function splitByLine(text: string): string[] {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function splitIntoEntries(rawText: string): string[] {
-  const text = rawText.trim()
+  // Strip lines that are only a number or number+punctuation (PDF row numbers,
+  // broken URL suffixes like "8." after tblxearKzw8W7ViN)
+  const text = rawText
+    .trim()
+    .split('\n')
+    .filter((l) => !/^\s*\d+\s*$/.test(l) && !/^\s*\d{1,3}[.)]\s*$/.test(l))
+    .join('\n')
   return (
     splitNumbered(text) ??
     splitBlankLine(text) ??

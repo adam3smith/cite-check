@@ -28,13 +28,20 @@ function fixLineBreaks(input: string): string {
     const trimmed = buffer.trimEnd()
     const nextTrimmed = line.trimStart()
 
+    if (/^URL:\s*/i.test(nextTrimmed)) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
     const urlFragMatch = trimmed.match(/(https?:\/\/\S*)$/)
 
     if (urlFragMatch) {
       const frag = urlFragMatch[1]
       if (
         frag.endsWith('-') ||
-        ((frag.endsWith('/') || frag.endsWith('.')) && /^[a-z0-9]/.test(nextTrimmed))
+        ((frag.endsWith('/') || frag.endsWith('.')) && /^[a-z0-9]/.test(nextTrimmed)) ||
+        /^_/.test(nextTrimmed) ||
+        /^[a-zA-Z0-9]{1,5}\.?$/.test(nextTrimmed)
       ) {
         buffer = trimmed + nextTrimmed
         continue
@@ -45,6 +52,41 @@ function fixLineBreaks(input: string): string {
     }
 
     if (/^https?:\/\//.test(nextTrimmed)) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
+    const bufferHasUrl = /https?/i.test(trimmed) || /URL:/i.test(trimmed)
+    const nextIsNewRef = /^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝ][a-zA-ZÀ-ÖØ-öø-ÿ'\-]+(?: [A-Z][a-zA-Z]+)?,\s/.test(nextTrimmed)
+    if (bufferHasUrl && nextIsNewRef) {
+      result.push(buffer)
+      buffer = line
+      continue
+    }
+
+    const nextWordCount = nextTrimmed.split(/\s+/).filter(Boolean).length
+    if (nextWordCount <= 3 && !nextIsNewRef) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
+    if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
+    if (/^(1[5-9]\d\d|20\d\d)[.,]\s/.test(nextTrimmed)) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
+    if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50))) {
+      buffer = trimmed + ' ' + nextTrimmed
+      continue
+    }
+
+    const wordsBeforeDoi = nextTrimmed.match(/^((?:\S+\s+){0,3}\S+)\s+(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:|10\.\d{4,}\/)/)
+    if (wordsBeforeDoi) {
       buffer = trimmed + ' ' + nextTrimmed
       continue
     }
@@ -142,6 +184,142 @@ describe('fixLineBreaks — URL broken after slash', () => {
     const result = fixLineBreaks(input)
     const lines = result.split('\n')
     expect(lines).toHaveLength(2)
+  })
+})
+
+// ── URL: prefix lines ─────────────────────────────────────────────────────────
+
+describe('fixLineBreaks — URL: prefix lines', () => {
+  it('joins URL: line to preceding reference even after a period', () => {
+    const input = [
+      'Arkin, Daniel. 2023. "Hamas attack evokes memories." CNN . (Accessed on December 18, 2023).',
+      'URL: https: // www. nbcnews. com/ news/ world/ hamas-attack.',
+      'Balcells, Laia. 2012. "The Consequences." Politics and Society .',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('URL:')
+    expect(lines[0]).toContain('Arkin')
+    expect(lines[1]).toContain('Balcells')
+  })
+
+  it('keeps URL block with its reference when next line is a new author', () => {
+    const input = [
+      'Balcells, Laia. 2012. "The Consequences." Politics and Society .',
+      'URL: https: // digital. csic. es/ handle/ 10261/ 58456',
+      'Bauer, Regina. 2024. "Narva cafe." Social Media.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('Balcells')
+    expect(lines[0]).toContain('URL:')
+    expect(lines[1]).toContain('Bauer')
+  })
+})
+
+// ── Next-reference detection ──────────────────────────────────────────────────
+
+describe('fixLineBreaks — next-line new-reference detection', () => {
+  it('breaks before Lastname, pattern even without period ending', () => {
+    // URL block ends without period; next line is a new reference
+    const input = [
+      'Arkin, Daniel. 2023. "Hamas." CNN . (Accessed December 18, 2023).',
+      'URL: https: // www. nbcnews. com/ news/ hamas-attack-evokes-',
+      'memories-holocaust-many-jews-rcna120590',
+      'Balcells, Laia. 2012. "Victimization." Politics and Society.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('Arkin')
+    expect(lines[0]).toContain('memories-holocaust')
+    expect(lines[1]).toContain('Balcells')
+  })
+
+  it('works with compound last names like De Vries after a URL', () => {
+    // nextIsNewRef only applies when buffer contains a URL
+    const input = [
+      'Balcells, Laia. 2012. "Title." Journal. URL: https://example.com/paper',
+      'De Vries, Catherine E. 2020. "Title." Journal.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toContain('De Vries')
+  })
+})
+
+// ── Short continuation lines (publisher on own line) ─────────────────────────
+
+describe('fixLineBreaks — short continuation lines', () => {
+  it('joins a publisher line (≤3 words) to the preceding title line', () => {
+    const input = [
+      'Beissinger, Mark R. 2002. Nationalist Mobilization and the Collapse of the Soviet State.',
+      'Cambridge University Press.',
+      'Balcells, Laia. 2012. "Victimization." Politics and Society.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('Cambridge University Press')
+    expect(lines[0]).toContain('Beissinger')
+  })
+
+  it('does not join a short line that looks like a new reference', () => {
+    // "Smith, John." is only 2 words but matches author pattern
+    const input = [
+      'Some text ending with a period.',
+      'Smith, John. 2020. "Title." Journal.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+  })
+})
+
+// ── Multi-author continuation lines ──────────────────────────────────────────
+
+describe('fixLineBreaks — multi-author continuation', () => {
+  it('joins author continuation lines that look like Lastname, Firstname', () => {
+    const input = [
+      'Coppedge, Michael, John Gerring, Carl Henrik Knutsen, Staffan I. Lindberg, Jan Teorell, David',
+      'Altman, Michael Bernhard, Agnes Cornell, M. Steven Fish, Lisa Gastaldi. 2021. "V-Dem."',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n').filter((l) => l.trim())
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('Altman')
+    expect(lines[0]).toContain('Coppedge')
+  })
+})
+
+// ── URL broken mid-segment (short alphanumeric continuation) ─────────────────
+
+describe('fixLineBreaks — short URL-path fragment continuation', () => {
+  it('joins a standalone digit+period line that is a URL path fragment', () => {
+    const input = [
+      "'Mapping Police Violence'. 2025. https://airtable.com/appzVzSeINK1S3EVR/shroOenW19l1m3w0H/tblxearKzw8W7ViN",
+      '8.',
+      'Marlow, Alan. 2000. Title.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('tblxearKzw8W7ViN8.')
+    expect(lines[1]).toContain('Marlow')
+  })
+
+  it('joins underscore-prefixed URL continuation', () => {
+    const input = [
+      'Redes da Maré. 2026. Title. https://www.redesdamare.org.br/media/downloads/arquivos/Boletim_Segurança_Publica',
+      '_Rd.pdf.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    expect(result).toBe(
+      'Redes da Maré. 2026. Title. https://www.redesdamare.org.br/media/downloads/arquivos/Boletim_Segurança_Publica_Rd.pdf.',
+    )
   })
 })
 

@@ -57,6 +57,20 @@ describe('splitIntoEntries', () => {
     expect(entries.some((e) => e.includes('2019'))).toBe(true)
   })
 
+  it('ignores a bare "8." on its own line in a single-newline-separated list', () => {
+    // "8." appears after a broken URL — should not split a 60-ref list into two entries
+    const refs: string[] = []
+    for (let i = 0; i < 10; i++) {
+      refs.push(`Author${i}, X. 2020. "Title." Journal ${i} (1): 1–10.`)
+    }
+    // Insert the "8." line after one of them (simulating a broken URL end)
+    refs[4] = refs[4] + '\n8.'
+    const text = refs.join('\n')
+    const entries = splitIntoEntries(text)
+    // Should produce 10 entries (one per author), not 2 (split on "8.")
+    expect(entries).toHaveLength(10)
+  })
+
   it('ignores spurious numbered markers when blank-line count greatly exceeds marker count', () => {
     // Large blank-line separated list with only one or two lines that happen to
     // start with a small number (e.g. "2. a second point" in a title, or "1." page ref).
