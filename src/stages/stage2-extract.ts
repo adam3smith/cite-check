@@ -50,14 +50,15 @@ export function extractURL(text: string): string | null {
 /** Extract 4-digit year from text.
  *  Prefers APA-style (YYYY) or Chicago `. YYYY.` over bare years in titles.
  *  Also handles letter suffixes for multiple works in same year: (2024a), (2024b).
+ *  Also handles Vancouver-style `YYYY;` separator.
  */
 export function extractYear(text: string): string | null {
   // APA: (YYYY) or (YYYYa) / (YYYYb) disambiguators
   // Restrict to plausible year range — prevents matching issue numbers like (6516) or (7945)
   let m = text.match(/\((1[5-9]\d\d|20\d\d)[a-z,)]/)
   if (m) return m[1]
-  // Chicago author-date: `. YYYY.` or `. YYYY:`
-  m = text.match(/[.;,]\s+(1[5-9]\d\d|20\d\d)[.,:]/)
+  // Chicago author-date: `. YYYY.` or `. YYYY:` ; also Vancouver `. YYYY;`
+  m = text.match(/[.;,]\s+(1[5-9]\d\d|20\d\d)[.,;:]/)
   if (m) return m[1]
   // Fall back to any 4-digit year 1500–2099
   m = text.match(/\b(1[5-9]\d\d|20\d\d)\b/)
@@ -102,10 +103,17 @@ function parseOneName(s: string): AuthorName | null {
     return { last: commaMatch[1].trim(), first: commaMatch[2].trim() || null }
   }
 
-  // "First Last" format (less reliable — only use if no comma)
+  // Vancouver all-caps format: "LASTNAME GM" — last token is short initials (≤3 caps)
+  // Distinguish from "First Last" by detecting that the final token is initials-like
   const words = s.split(/\s+/)
   if (words.length >= 2) {
-    return { last: words[words.length - 1], first: words.slice(0, -1).join(' ') }
+    const lastToken = words[words.length - 1]
+    // "LastName AB" format (Vancouver, SAGE, etc.): last token is 1–3 uppercase-only letters
+    if (lastToken.length <= 3 && /^[A-Z]+$/.test(lastToken)) {
+      return { last: words.slice(0, -1).join(' '), first: lastToken }
+    }
+    // "First Last" format (less reliable)
+    return { last: lastToken, first: words.slice(0, -1).join(' ') }
   }
 
   // Single word — treat as last name
@@ -210,6 +218,8 @@ function extractContainerFromRemainder(remainder: string, _type: string): string
   s = s.replace(/\s*\d+\s*\(\d+\)\s*[,:]\s*[\d–\-]+.*$/, '')
   s = s.replace(/,\s*\d+\s*\(\d+\).*$/, '')
   s = s.replace(/\s+\d+\s*[,:]\s*[\d–\-]+.*$/, '')
+  // MLA-style: " 110, no. 2" trailing volume/issue notation
+  s = s.replace(/,?\s+\d+,\s+no\.\s+\d+.*$/, '')
   s = s.replace(/[.,\s]+$/, '').trim()
   return s || null
 }
@@ -229,6 +239,50 @@ export function extractFields(entry: RawEntry): ParsedReference {
     .replace(/https?:\/\/(?:dx\.)?doi\.org\/\S+/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
+
+  // ── Back-date format detection ────────────────────────────────────────────
+  // MLA:       AUTHOR. "Title." Journal Vol, no. Issue (YEAR): Pages.
+  // Vancouver: AUTHOR. Title. Journal. YEAR;Vol(Issue):Pages.
+  // Both have unambiguous year markers never seen in author-date format.
+  const isBackDate =
+    /\((1[5-9]\d\d|20\d\d)\)\s*:/.test(cleaned) ||   // MLA: (YEAR):
+    /\b(1[5-9]\d\d|20\d\d);/.test(cleaned)            // Vancouver: YEAR;
+
+  if (isBackDate && year) {
+    // Author block ends at the first period before a quoted title or a title-case word
+    const bdAuthorEnd = cleaned.search(/\.\s+(?=["""\u201c\u2018']|[A-Z][a-z])/)
+    const authorSegment = bdAuthorEnd > 0 ? cleaned.slice(0, bdAuthorEnd) : ''
+    const authors = extractAuthors(authorSegment)
+
+    // Middle portion (between author end and year start) contains title + container
+    const yearIdx = cleaned.search(new RegExp(`\\b${year}`))
+    const middle =
+      bdAuthorEnd >= 0 && yearIdx > bdAuthorEnd
+        ? cleaned.slice(bdAuthorEnd + 1, yearIdx).trim()
+        : ''
+    const mid = extractTitleAndContainer(middle, entry.type)
+
+    // After-year contains vol/issue/pages (Vancouver: ;Vol(Issue):Pages  MLA: ): Pages)
+    const afterYearRaw = yearIdx >= 0 ? cleaned.slice(yearIdx + year.length) : ''
+    const afterYear = afterYearRaw.replace(/^[a-z]?[),;.\s]+/, '').trim()
+    const aft = extractTitleAndContainer(afterYear, entry.type)
+
+    return {
+      ...entry,
+      authors,
+      year,
+      title: mid.title,
+      container: mid.container,
+      doi,
+      url,
+      isbn,
+      pages: aft.pages ?? mid.pages,
+      volume: aft.volume ?? mid.volume,
+      issue: aft.issue ?? mid.issue,
+    }
+  }
+
+  // ── Standard author-date extraction ──────────────────────────────────────
 
   // Find where authors end
   const authorEnd = findAuthorSegmentEnd(cleaned, year)

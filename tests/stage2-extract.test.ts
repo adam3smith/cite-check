@@ -125,6 +125,22 @@ describe('extractAuthors', () => {
     expect(authors[0].last).toBe('Mahoney')
     expect(authors[1].last).toBe('Thelen')
   })
+
+  it('parses mixed-case LastName AB format (SAGE/Vancouver initials, no comma)', () => {
+    const authors = extractAuthors('Azari JR and Smith JK')
+    expect(authors[0].last).toBe('Azari')
+    expect(authors[0].first).toBe('JR')
+    expect(authors[1].last).toBe('Smith')
+    expect(authors[1].first).toBe('JK')
+  })
+
+  it('parses single initial after mixed-case last name (Bächtiger A)', () => {
+    const authors = extractAuthors('Bächtiger A and Hangartner D')
+    expect(authors[0].last).toBe('Bächtiger')
+    expect(authors[0].first).toBe('A')
+    expect(authors[1].last).toBe('Hangartner')
+    expect(authors[1].first).toBe('D')
+  })
 })
 
 // ── normalizeTitle ────────────────────────────────────────────────────────────
@@ -135,6 +151,75 @@ describe('normalizeTitle', () => {
   })
   it('collapses whitespace', () => {
     expect(normalizeTitle('  some   title  ')).toBe('some title')
+  })
+})
+
+// ── extractYear: Vancouver semicolon ─────────────────────────────────────────
+
+describe('extractYear — Vancouver semicolon', () => {
+  it('extracts year from YYYY; pattern', () => {
+    expect(
+      extractYear('TEZCÜR GM. Ordinary People. American Political Science Review. 2016;110(2):247–64.'),
+    ).toBe('2016')
+  })
+})
+
+// ── extractFields: back-date formats ─────────────────────────────────────────
+
+describe('extractFields — MLA back-date format', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const mla =
+    'TEZCÜR, GÜNEŞ MURAT. "Ordinary People, Extraordinary Risks: Participation in an Ethnic Rebellion." American Political Science Review 110, no. 2 (2016): 247–64.'
+
+  it('extracts author last name TEZCÜR', () => {
+    expect(extractFields(makeEntry(mla)).authors[0]?.last).toBe('TEZCÜR')
+  })
+  it('extracts year 2016', () => {
+    expect(extractFields(makeEntry(mla)).year).toBe('2016')
+  })
+  it('extracts title containing "Ordinary People"', () => {
+    expect(extractFields(makeEntry(mla)).title).toContain('Ordinary People')
+  })
+  it('extracts container containing "American Political Science Review"', () => {
+    expect(extractFields(makeEntry(mla)).container).toContain('American Political Science Review')
+  })
+  it('extracts pages 247', () => {
+    expect(extractFields(makeEntry(mla)).pages).toContain('247')
+  })
+})
+
+describe('extractFields — Vancouver back-date format', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const vancouver =
+    'TEZCÜR GM. Ordinary People, Extraordinary Risks: Participation in an Ethnic Rebellion. American Political Science Review. 2016;110(2):247–64.'
+
+  it('extracts author last name TEZCÜR', () => {
+    expect(extractFields(makeEntry(vancouver)).authors[0]?.last).toBe('TEZCÜR')
+  })
+  it('extracts year 2016', () => {
+    expect(extractFields(makeEntry(vancouver)).year).toBe('2016')
+  })
+  it('extracts title containing "Ordinary People"', () => {
+    expect(extractFields(makeEntry(vancouver)).title).toContain('Ordinary People')
+  })
+  it('extracts container containing "American Political Science Review"', () => {
+    expect(extractFields(makeEntry(vancouver)).container).toContain('American Political Science Review')
+  })
+  it('extracts volume 110 and issue 2', () => {
+    const result = extractFields(makeEntry(vancouver))
+    expect(result.volume).toBe('110')
+    expect(result.issue).toBe('2')
+  })
+  it('extracts pages 247', () => {
+    expect(extractFields(makeEntry(vancouver)).pages).toContain('247')
   })
 })
 
