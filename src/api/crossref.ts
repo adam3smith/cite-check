@@ -27,6 +27,15 @@ interface CrossRefWork {
   URL?: string
 }
 
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
 function normalizeCrossRefWork(work: CrossRefWork): NormalizedWork {
   const authors: AuthorName[] = (work.author ?? []).map((a) => ({
     last: a.family ?? a.name ?? '',
@@ -39,10 +48,10 @@ function normalizeCrossRefWork(work: CrossRefWork): NormalizedWork {
   const type = crossRefTypeToLocal(work.type ?? '')
 
   return {
-    title: work.title?.[0] ?? '',
+    title: decodeHtmlEntities(work.title?.[0] ?? ''),
     authors,
     year,
-    container: work['container-title']?.[0] ?? null,
+    container: decodeHtmlEntities(work['container-title']?.[0] ?? '') || null,
     doi: work.DOI ?? null,
     isbn: work.ISBN?.[0]?.replace(/[-\s]/g, '') ?? null,
     pages: work.page ?? null,

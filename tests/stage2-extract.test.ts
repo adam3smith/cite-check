@@ -141,6 +141,24 @@ describe('extractAuthors', () => {
     expect(authors[1].last).toBe('Hangartner')
     expect(authors[1].first).toBe('D')
   })
+
+  it('parses hyphenated initials A-S', () => {
+    const authors = extractAuthors('Heinze A-S')
+    expect(authors[0].last).toBe('Heinze')
+    expect(authors[0].first).toBe('A-S')
+  })
+
+  it('strips et al. and keeps preceding authors', () => {
+    const authors = extractAuthors('Kurtz KT et al.')
+    expect(authors).toHaveLength(1)
+    expect(authors[0].last).toBe('Kurtz')
+    expect(authors[0].first).toBe('KT')
+  })
+
+  it('strips et al without period', () => {
+    const authors = extractAuthors('Smith J et al')
+    expect(authors[0].last).toBe('Smith')
+  })
 })
 
 // ── normalizeTitle ────────────────────────────────────────────────────────────
@@ -151,6 +169,58 @@ describe('normalizeTitle', () => {
   })
   it('collapses whitespace', () => {
     expect(normalizeTitle('  some   title  ')).toBe('some title')
+  })
+})
+
+// ── extractFields: title ending in ? with journal following directly ──────────
+
+describe('extractFields — question-mark title, journal follows', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const och =
+    'Och M (2020) Manterrupting in the German Bundestag: Gendered Opposition to Female Members of Parliament? Politics & Gender 16, 388–408.'
+
+  it('extracts title ending in ? (Och)', () => {
+    const t = extractFields(makeEntry(och)).title
+    expect(t).toContain('Parliament?')
+    expect(t).not.toContain('Politics')
+  })
+  it('extracts container (Och)', () => {
+    expect(extractFields(makeEntry(och)).container).toContain('Politics')
+  })
+  it('extracts pages (Och)', () => {
+    expect(extractFields(makeEntry(och)).pages).toContain('388')
+  })
+
+  const stasavage =
+    'Stasavage D (2004) Open-Door or Closed-Door? Transparency in Domestic and International Bargaining. International Organization 58, 667–703.'
+
+  it('still correctly parses Stasavage (subtitle after ?, journal after period)', () => {
+    const result = extractFields(makeEntry(stasavage))
+    expect(result.title).toContain('Bargaining')
+    expect(result.container).toContain('International Organization')
+  })
+})
+
+// ── extractFields: SAGE Vol,Pages format ─────────────────────────────────────
+
+describe('extractFields — SAGE Vol,Pages (no issue)', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const sage =
+    'Azari JR and Smith JK (2012) Unwritten Rules: Informal Institutions in Established Democracies. Perspectives on Politics 10, 37–55.'
+
+  it('extracts volume 10', () => {
+    expect(extractFields(makeEntry(sage)).volume).toBe('10')
+  })
+  it('extracts pages 37–55', () => {
+    expect(extractFields(makeEntry(sage)).pages).toContain('37')
   })
 })
 

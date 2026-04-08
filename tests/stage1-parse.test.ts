@@ -116,6 +116,12 @@ describe('classifyType', () => {
   })
 })
 
+  it('classifies SAGE Vol,Pages format as journal-article', () => {
+    const raw =
+      'Matthews DR (1959) The Folkways of the United States Senate. American Political Science Review 53, 1064–1089.'
+    expect(classifyType(raw).type).toBe('journal-article')
+  })
+
 // ── parseReferenceList integration ───────────────────────────────────────────
 
 describe('parseReferenceList', () => {

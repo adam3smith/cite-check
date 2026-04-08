@@ -6,7 +6,7 @@ import type { RawEntry, ReferenceType, Confidence } from '../types'
 // Also catches "Online first" / "Advance online publication" (no volume yet) and
 // bare volume-only format like "Journal Name, 87." that has no issue number.
 const JOURNAL_SIGNALS =
-  /\b(vol\.|volume|no\.|issue|pp?\.\s*\d+|\bDOI\b|doi\.org|online first|advance online|forthcoming|in press)|\d+\s*\(\d+\)/i
+  /\b(vol\.|volume|no\.|issue|pp?\.\s*\d+|\bDOI\b|doi\.org|online first|advance online|forthcoming|in press)|\d+\s*\(\d+\)|\d+,\s*\d+[–\-]\d+/i
 // Case-sensitive "In" — require capital I after sentence-ending punctuation to avoid
 // matching lowercase preposition "in" (e.g. "in Germany", "in modern Italy").
 // Allow an optional closing quote between the period and " In" (common in Chicago style).

@@ -77,8 +77,11 @@ export function extractYear(text: string): string | null {
 export function extractAuthors(segment: string): AuthorName[] {
   if (!segment.trim()) return []
 
+  // Strip "et al." / "et al" before parsing
+  let s = segment.replace(/[,\s]+et\s+al\.?/gi, '').trim()
+
   // Normalize separators: " and " / ";" / " & " → "|"
-  let s = segment
+  s = s
     .replace(/\s+and\s+/gi, '|')
     .replace(/\s*[;&]\s*/g, '|')
     .trim()
@@ -108,8 +111,9 @@ function parseOneName(s: string): AuthorName | null {
   const words = s.split(/\s+/)
   if (words.length >= 2) {
     const lastToken = words[words.length - 1]
-    // "LastName AB" format (Vancouver, SAGE, etc.): last token is 1–3 uppercase-only letters
-    if (lastToken.length <= 3 && /^[A-Z]+$/.test(lastToken)) {
+    // "LastName AB" / "LastName A-S" format (Vancouver, SAGE, etc.):
+    // last token is 1–5 chars of uppercase letters and hyphens, starting with a letter
+    if (lastToken.length <= 5 && /^[A-Z][A-Z\-]*$/.test(lastToken)) {
       return { last: words.slice(0, -1).join(' '), first: lastToken }
     }
     // "First Last" format (less reliable)
@@ -176,9 +180,16 @@ function extractTitleAndContainer(
     // Pages without volume/issue: pp. 1–37 or : 251–267
     const pagesOnly = s.match(/(?:pp?\.\s*|:\s*)([\d–\-]+(?:–[\d]+)?)/)
     if (pagesOnly) pages = pagesOnly[1]
-    // Volume without issue
-    const volOnly = s.match(/\b(\d+)\s*[,:]\s*[\d–]+/)
-    if (volOnly && !volume) volume = volOnly[1]
+    // Vol, StartPage–EndPage (SAGE style: no issue, comma separator)
+    const volCommaPages = s.match(/\b(\d+),\s*([\d]+[–\-][\d]+)/)
+    if (volCommaPages) {
+      if (!volume) volume = volCommaPages[1]
+      if (!pages) pages = volCommaPages[2]
+    } else {
+      // Volume without issue
+      const volOnly = s.match(/\b(\d+)\s*[,:]\s*[\d–]+/)
+      if (volOnly && !volume) volume = volOnly[1]
+    }
   }
 
   // ── Title extraction ──
@@ -198,6 +209,17 @@ function extractTitleAndContainer(
     }
     if (segments.length >= 2) {
       container = extractContainerFromRemainder(segments.slice(1).join('. '), type)
+    }
+
+    // Title ends with "?" and journal follows directly with no intervening period
+    // e.g. "...Parliament? Politics & Gender 16, 388–408"
+    // Guard: only when container not already found, and vol/pages pattern appears after the ?
+    if (!container && title) {
+      const qMatch = title.match(/\?\s+([A-Z].+?(?:\d+\s*\(\d+\)|\d+,\s*\d+[–\-]\d+))/)
+      if (qMatch) {
+        title = title.slice(0, title.indexOf(qMatch[0]) + 1).trim()
+        container = extractContainerFromRemainder(qMatch[1], type)
+      }
     }
   }
 

@@ -272,8 +272,8 @@ export function citeCheckApp(): CiteCheckApp {
         }
 
         // Pattern C: next line has volume-issue notation within first 50 chars → journal continuation
-        // e.g. "Comparative Politics 51 (3):" or "Studies in Comparative... 48 (3):"
-        if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50))) {
+        // e.g. "Comparative Politics 51 (3):" or "Perspectives on Politics 10, 37–55"
+        if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50)) || /\d+,\s*\d+[–\-]/.test(nextTrimmed.slice(0, 50))) {
           buffer = trimmed + ' ' + nextTrimmed
           continue
         }
@@ -292,6 +292,9 @@ export function citeCheckApp(): CiteCheckApp {
         if (endsWithPeriod) {
           result.push(buffer)
           buffer = line
+        } else if (/\w-$/.test(trimmed)) {
+          // Hyphenated word break: remove the hyphen, join without space
+          buffer = trimmed.replace(/-$/, '') + nextTrimmed
         } else {
           buffer = trimmed + ' ' + nextTrimmed
         }

@@ -80,7 +80,7 @@ function fixLineBreaks(input: string): string {
       continue
     }
 
-    if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50))) {
+    if (/\d+\s*\(\d+\)/.test(nextTrimmed.slice(0, 50)) || /\d+,\s*\d+[–\-]/.test(nextTrimmed.slice(0, 50))) {
       buffer = trimmed + ' ' + nextTrimmed
       continue
     }
@@ -95,6 +95,8 @@ function fixLineBreaks(input: string): string {
     if (endsWithPeriod) {
       result.push(buffer)
       buffer = line
+    } else if (/\w-$/.test(trimmed)) {
+      buffer = trimmed.replace(/-$/, '') + nextTrimmed
     } else {
       buffer = trimmed + ' ' + nextTrimmed
     }
@@ -320,6 +322,38 @@ describe('fixLineBreaks — short URL-path fragment continuation', () => {
     expect(result).toBe(
       'Redes da Maré. 2026. Title. https://www.redesdamare.org.br/media/downloads/arquivos/Boletim_Segurança_Publica_Rd.pdf.',
     )
+  })
+})
+
+// ── Hyphen-broken word joining ────────────────────────────────────────────────
+
+describe('fixLineBreaks — hyphenated word breaks', () => {
+  it('removes hyphen and joins without space (Per- ceptions)', () => {
+    const input = [
+      'Kurtz KT et al. (2006) Full-Time, Part-Time, and Real Time: Explaining State Legislators Per-',
+      'ceptions of Time on the Job. State Politics & Policy Quarterly 6, 322–338.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    expect(result).toContain('Perceptions')
+    expect(result).not.toContain('Per-')
+    expect(result).not.toContain('Per ceptions')
+  })
+})
+
+// ── Pattern C: Vol, Pages format (no issue number) ───────────────────────────
+
+describe('fixLineBreaks — Pattern C Vol,Pages continuation', () => {
+  it('joins a journal line broken before Vol, Pages (SAGE style)', () => {
+    const input = [
+      'Azari JR and Smith JK (2012) Unwritten Rules: Informal Institutions in Established Democracies.',
+      'Perspectives on Politics 10, 37–55.',
+      'Bächtiger A and Hangartner D (2010) When Deliberative Theory.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toContain('Perspectives on Politics 10, 37')
+    expect(lines[1]).toContain('Bächtiger')
   })
 })
 
