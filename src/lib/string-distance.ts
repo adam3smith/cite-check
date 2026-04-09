@@ -150,12 +150,12 @@ export function normalizePublisher(s: string | null | undefined): string | null 
   return m ? m[1].trim() : s
 }
 
-/** Score year: 1.0 for exact match, 0.5 for ±1 year (online-first / print lag), 0 otherwise */
+/** Score year: 1.0 for exact match, 0.7 for ±1 year (online-first / print lag), 0 otherwise */
 function yearScore(input: string | null | undefined, found: string | null | undefined): number {
   if (!input || !found) return 0
   if (input.trim() === found.trim()) return 1
   const diff = Math.abs(parseInt(input) - parseInt(found))
-  return diff === 1 ? 0.5 : 0
+  return diff === 1 ? 0.7 : 0
 }
 
 /** Score authors: best average match between parsed authors and API authors */

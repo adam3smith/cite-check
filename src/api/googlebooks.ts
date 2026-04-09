@@ -39,7 +39,7 @@ export function isGoogleBooksQuotaExhausted(): boolean {
 
 // ── Author name parsing ───────────────────────────────────────────────────────
 
-const PARTICLES = new Set(['de', 'van', 'von', 'le', 'la', 'di', 'du', 'der', 'den', 'ten', 'ter', 'del', 'della', 'dos', 'das', 'do'])
+const PARTICLES = new Set(['de', 'van', 'von', 'le', 'la', 'el', 'di', 'du', 'der', 'den', 'ten', 'ter', 'del', 'della', 'dos', 'das', 'do', 'al'])
 
 function parseFirstLast(name: string): AuthorName {
   const parts = name.trim().replace(/\.$/, '').split(/\s+/)

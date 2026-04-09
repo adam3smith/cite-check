@@ -200,9 +200,9 @@ describe('scoreReference', () => {
     expect(scores.container).toBeGreaterThan(0.9)
   })
 
-  it('returns 0.5 for year ±1 (online-first lag)', () => {
-    expect(scoreReference(parsed, { ...apiData, year: '1999' }).year).toBe(0.5)
-    expect(scoreReference(parsed, { ...apiData, year: '2001' }).year).toBe(0.5)
+  it('returns 0.7 for year ±1 (online-first lag)', () => {
+    expect(scoreReference(parsed, { ...apiData, year: '1999' }).year).toBe(0.7)
+    expect(scoreReference(parsed, { ...apiData, year: '2001' }).year).toBe(0.7)
   })
 
   it('returns 0 for year ±2 or more', () => {

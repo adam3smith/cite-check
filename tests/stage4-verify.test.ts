@@ -58,14 +58,14 @@ describe('scoreReference + weightedTotal (perfect match)', () => {
     expect(scores.title).toBeGreaterThan(0.95)
   })
 
-  it('gives 0.5 for year ±1 (online-first lag) — partial penalty, still close to verified', () => {
+  it('gives 0.7 for year ±1 (online-first lag) — partial penalty, still close to verified', () => {
     const lookup = makeLookup()
-    // 2000 vs 1999: off by 1 → year score 0.5 (costs 0.075 instead of 0.15 full penalty)
+    // 2000 vs 1999: off by 1 → year score 0.7 (costs 0.045 instead of 0.15 full penalty)
     const scores = scoreReference(lookup, makeApiData({ year: '1999' }))
-    expect(scores.year).toBe(0.5)
-    // With all other fields perfect, total is ~0.925 — still "verified" but below perfect 1.0
+    expect(scores.year).toBe(0.7)
+    // With all other fields perfect, total is ~0.955 — still "verified" but below perfect 1.0
     expect(weightedTotal(scores)).toBeLessThan(1.0)
-    expect(weightedTotal(scores)).toBeGreaterThan(0.85)
+    expect(weightedTotal(scores)).toBeGreaterThan(0.9)
   })
 
   it('gives 0 for year ±2 or more', () => {

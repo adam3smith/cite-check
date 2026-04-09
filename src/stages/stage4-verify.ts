@@ -45,8 +45,8 @@ export function findDiscrepancies(
 
   d('author', authorsToString(lookup.authors), authorsToString(api.authors), fieldScores.author)
   d('title', lookup.title, api.title, fieldScores.title)
-  // year: score 0.5 means ±1 year (minor), score 0 means ±2+ (major)
-  d('year', lookup.year, api.year, fieldScores.year === 0.5 ? 0.85 : fieldScores.year)
+  // year: score 0.7 means ±1 year (minor), score 0 means ±2+ (major)
+  d('year', lookup.year, api.year, fieldScores.year === 0.7 ? 0.85 : fieldScores.year)
   d('journal/publisher', lookup.container, api.container, fieldScores.container)
   d('pages', lookup.pages, api.pages, fieldScores.pages)
 

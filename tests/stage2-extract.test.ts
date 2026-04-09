@@ -148,6 +148,7 @@ describe('extractAuthors', () => {
     expect(authors[0].first).toBe('A-S')
   })
 
+
   it('strips et al. and keeps preceding authors', () => {
     const authors = extractAuthors('Kurtz KT et al.')
     expect(authors).toHaveLength(1)

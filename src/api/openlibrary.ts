@@ -1,5 +1,5 @@
 import type { AuthorName, LookupResult, NormalizedWork, ParsedReference } from '../types'
-import { scoreReference, weightedTotal } from '../lib/string-distance'
+import { scoreReference, weightedTotal, jaroWinkler, normalizeForComparison } from '../lib/string-distance'
 
 const BASE = 'https://openlibrary.org'
 
@@ -14,7 +14,7 @@ interface OpenLibraryDoc {
 }
 
 // Name particles that prefix compound last names (de, van, von, etc.)
-const PARTICLES = new Set(['de', 'van', 'von', 'le', 'la', 'di', 'du', 'der', 'den', 'ten', 'ter', 'del', 'della', 'dos', 'das', 'do'])
+const PARTICLES = new Set(['de', 'van', 'von', 'le', 'la', 'el', 'di', 'du', 'der', 'den', 'ten', 'ter', 'del', 'della', 'dos', 'das', 'do', 'al'])
 
 /** Parse a "First [Particle] Last" string into AuthorName, handling compound last names. */
 function parseFirstLast(name: string): AuthorName {
@@ -31,7 +31,20 @@ function parseFirstLast(name: string): AuthorName {
   }
 }
 
-function normalizeOpenLibraryWork(doc: OpenLibraryDoc): NormalizedWork {
+function bestPublisher(publishers: string[] | undefined, refPublisher: string | null | undefined): string | null {
+  if (!publishers || publishers.length === 0) return null
+  if (publishers.length === 1 || !refPublisher) return publishers[0]
+  const ref = normalizeForComparison(refPublisher)
+  let best = publishers[0]
+  let bestScore = -1
+  for (const p of publishers) {
+    const score = jaroWinkler(normalizeForComparison(p), ref)
+    if (score > bestScore) { bestScore = score; best = p }
+  }
+  return best
+}
+
+function normalizeOpenLibraryWork(doc: OpenLibraryDoc, refPublisher?: string | null): NormalizedWork {
   const authors: AuthorName[] = (doc.author_name ?? []).map(parseFirstLast)
 
   const isbn = doc.isbn?.[0]?.replace(/[-\s]/g, '') ?? null
@@ -40,7 +53,7 @@ function normalizeOpenLibraryWork(doc: OpenLibraryDoc): NormalizedWork {
     title: doc.title ?? '',
     authors,
     year: doc.first_publish_year?.toString() ?? null,
-    container: doc.publisher?.[0] ?? null,
+    container: bestPublisher(doc.publisher, refPublisher),
     doi: null,
     isbn,
     pages: null,
@@ -79,7 +92,7 @@ export async function searchByTitleAuthor(ref: ParsedReference): Promise<LookupR
     if (docs.length === 0) {
       return { ...ref, lookupStatus: 'not-found', lookupSource: 'openlibrary', apiData: null }
     }
-    const candidates = docs.map(normalizeOpenLibraryWork)
+    const candidates = docs.map((doc) => normalizeOpenLibraryWork(doc, ref.container))
     const best = candidates.reduce((a, b) =>
       weightedTotal(scoreReference(ref, b)) > weightedTotal(scoreReference(ref, a)) ? b : a,
     )
