@@ -58,7 +58,8 @@ export function extractYear(text: string): string | null {
   let m = text.match(/\((1[5-9]\d\d|20\d\d)[a-z,)]/)
   if (m) return m[1]
   // Chicago author-date: `. YYYY.` or `. YYYY:` ; also Vancouver `. YYYY;`
-  m = text.match(/[.;,]\s+(1[5-9]\d\d|20\d\d)[.,;:]/)
+  // Optional letter suffix for multiple works in same year: `. 2004a.`
+  m = text.match(/[.;,]\s+(1[5-9]\d\d|20\d\d)[a-z]?[.,;:]/)
   if (m) return m[1]
   // Fall back to any 4-digit year 1500–2099
   m = text.match(/\b(1[5-9]\d\d|20\d\d)\b/)
@@ -137,8 +138,8 @@ function findAuthorSegmentEnd(text: string, yearStr: string | null): number {
   const apaIdx = text.indexOf(`(${yearStr}`)
   if (apaIdx !== -1) return apaIdx
 
-  // Chicago: `. YYYY.` — find the year preceded by period/comma
-  const chiIdx = text.search(new RegExp(`[.,]\\s+${yearStr}[.,:]`))
+  // Chicago: `. YYYY.` or `. 2004a.` — find the year preceded by period/comma
+  const chiIdx = text.search(new RegExp(`[.,]\\s+${yearStr}[a-z]?[.,;:]`))
   if (chiIdx !== -1) return chiIdx + 1 // include the period before year
 
   return 0

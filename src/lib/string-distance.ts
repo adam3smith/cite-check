@@ -91,6 +91,31 @@ export function tokenJaccard(a: string, b: string): number {
 
 // ── Field-level scoring ───────────────────────────────────────────────────────
 
+/**
+ * Expand a Chicago-abbreviated page range to its full form.
+ * "529–45" → "529-545",  "849–63" → "849-863",  "1369–401" → "1369-1401"
+ * Full ranges and single pages are returned unchanged (dashes normalized).
+ */
+export function expandPageRange(pages: string): string {
+  const s = pages.replace(/[–—]/g, '-').trim()
+  const m = s.match(/^(\d+)-(\d+)$/)
+  if (!m) return s
+  const [, start, end] = m
+  if (end.length < start.length) {
+    return `${start}-${start.slice(0, start.length - end.length)}${end}`
+  }
+  return s
+}
+
+/** Score two page fields: expands Chicago abbreviated ranges before comparing. */
+function pagesScore(input: string | null | undefined, found: string | null | undefined): number {
+  if (input == null || found == null) return 0
+  const a = expandPageRange(input.trim())
+  const b = expandPageRange(found.trim())
+  if (a === b) return 1
+  return jaroWinkler(normalizeForComparison(a), normalizeForComparison(b))
+}
+
 /** Score two string fields using Jaro-Winkler on normalized forms. */
 export function fieldScore(input: string | null | undefined, found: string | null | undefined): number {
   if (input == null || found == null) return 0
@@ -186,7 +211,7 @@ export function scoreReference(
     title: titleFieldScore(parsed.title, apiData.title),
     year: yearScore(parsed.year, apiData.year),
     container: fieldScore(normalizePublisher(parsed.container), normalizePublisher(apiData.container)),
-    pages: fieldScore(parsed.pages, apiData.pages),
+    pages: pagesScore(parsed.pages, apiData.pages),
   }
 }
 

@@ -82,6 +82,12 @@ describe('extractYear', () => {
   it('extracts year from APA disambiguator suffix (2024b)', () => {
     expect(extractYear('Bernardi, L. (2024b). Not in the mood.')).toBe('2024')
   })
+  it('extracts year from Chicago disambiguator suffix (2004a.)', () => {
+    expect(extractYear('Posner, Daniel N. 2004a. "Measuring Ethnic Fractionalization."')).toBe('2004')
+  })
+  it('extracts year from Chicago disambiguator suffix (2004b.)', () => {
+    expect(extractYear('Posner, Daniel N. 2004b. "The Political Salience."')).toBe('2004')
+  })
   it('does not mistake a 4-digit issue number for a year', () => {
     // Science 370 (6516) — issue number 6516 is not a valid year
     expect(extractYear('Finkel et al. 2020. "Political Sectarianism." Science 370 (6516): 533–36.')).toBe('2020')
@@ -332,6 +338,28 @@ describe('extractFields — fixture integration', () => {
     })
     it('extracts volume 94', () => {
       expect(extractFields(makeEntry(f)).volume).toBe('94')
+    })
+  })
+
+  describe('chicago-year-suffix (2004a disambiguation)', () => {
+    const raw = 'Posner, Daniel N. 2004a. "Measuring Ethnic Fractionalization in Africa." American Journal of Political Science 48 (4): 849–63.'
+    function makeEntry(): RawEntry {
+      const { type, confidence } = classifyType(raw)
+      return { index: 0, raw, type, parseConfidence: confidence }
+    }
+    it('extracts year 2004', () => {
+      expect(extractFields(makeEntry()).year).toBe('2004')
+    })
+    it('extracts author Posner', () => {
+      expect(extractFields(makeEntry()).authors[0]?.last).toBe('Posner')
+    })
+    it('extracts title without year-suffix artifact', () => {
+      const title = extractFields(makeEntry()).title
+      expect(title).toContain('Measuring Ethnic Fractionalization')
+      expect(title).not.toMatch(/^a[.)]/i)
+    })
+    it('extracts container', () => {
+      expect(extractFields(makeEntry()).container).toContain('American Journal')
     })
   })
 

@@ -10,6 +10,7 @@ import {
   scoreToStatus,
   normalizeForComparison,
   normalizePublisher,
+  expandPageRange,
 } from '../src/lib/string-distance'
 import type { ParsedReference, NormalizedWork } from '../src/types'
 
@@ -213,6 +214,32 @@ describe('scoreReference', () => {
   it('penalizes wrong author', () => {
     const badApi = { ...apiData, authors: [{ last: 'Smith', first: 'John' }] }
     expect(scoreReference(parsed, badApi).author).toBeLessThan(0.7)
+  })
+})
+
+// ── expandPageRange ───────────────────────────────────────────────────────────
+
+describe('expandPageRange', () => {
+  it('expands 3-digit Chicago range: 529–45 → 529-545', () => {
+    expect(expandPageRange('529–45')).toBe('529-545')
+  })
+  it('expands 3-digit Chicago range: 849–63 → 849-863', () => {
+    expect(expandPageRange('849–63')).toBe('849-863')
+  })
+  it('expands 4-digit Chicago range: 1369–401 → 1369-1401', () => {
+    expect(expandPageRange('1369–401')).toBe('1369-1401')
+  })
+  it('leaves full range unchanged: 529-545', () => {
+    expect(expandPageRange('529-545')).toBe('529-545')
+  })
+  it('leaves single page unchanged: 191', () => {
+    expect(expandPageRange('191')).toBe('191')
+  })
+  it('scores Chicago abbreviated range equal to full range', () => {
+    // pagesScore is tested via scoreReference: pages field on otherwise perfect match
+    const ref = { pages: '529–45' } as { pages: string }
+    const api = { pages: '529-545' } as { pages: string }
+    expect(expandPageRange(ref.pages)).toBe(expandPageRange(api.pages))
   })
 })
 
