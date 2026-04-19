@@ -64,13 +64,24 @@ function fixLineBreaks(input: string): string {
       continue
     }
 
+    if (/[a-zA-Z]-$/.test(trimmed)) {
+      buffer = trimmed.replace(/-$/, '') + nextTrimmed
+      continue
+    }
+    if (/\d-$/.test(trimmed)) {
+      buffer = trimmed + nextTrimmed
+      continue
+    }
+
     const nextWordCount = nextTrimmed.split(/\s+/).filter(Boolean).length
     if (nextWordCount <= 3 && !nextIsNewRef) {
       buffer = trimmed + ' ' + nextTrimmed
       continue
     }
 
-    if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)) {
+    if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)
+        && !/,\s*(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)
+        && !nextIsNewRef) {
       buffer = trimmed + ' ' + nextTrimmed
       continue
     }
@@ -95,8 +106,6 @@ function fixLineBreaks(input: string): string {
     if (endsWithPeriod) {
       result.push(buffer)
       buffer = line
-    } else if (/\w-$/.test(trimmed)) {
-      buffer = trimmed.replace(/-$/, '') + nextTrimmed
     } else {
       buffer = trimmed + ' ' + nextTrimmed
     }
@@ -354,6 +363,38 @@ describe('fixLineBreaks — Pattern C Vol,Pages continuation', () => {
     expect(lines).toHaveLength(2)
     expect(lines[0]).toContain('Perspectives on Politics 10, 37')
     expect(lines[1]).toContain('Bächtiger')
+  })
+})
+
+// ── Chicago bib (year at end): 3 references, no blank lines ──────────────────
+
+describe('fixLineBreaks — Chicago bibliography style (year at end)', () => {
+  it('keeps 3 single-newline-separated bib references as 3 entries', () => {
+    const input = [
+      'Brown, Wendy. Undoing the Demos: Neoliberalism\'s Stealth Revolution. MIT Press, 2015.',
+      'Carnap, Rudolf. Logical Foundations of Probability. Vol. 2. Chicago: University of Chicago Press, 1962.',
+      'Cohen, L. Jonathan. "Some steps towards a general theory of relevance." Synthese 101 (1994): 171-',
+      '185.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    const lines = result.split('\n').filter((l) => l.trim())
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toContain('Brown')
+    expect(lines[1]).toContain('Carnap')
+    expect(lines[2]).toContain('Cohen')
+  })
+
+  it('joins the page-range continuation (171-\\n185.) with hyphen intact', () => {
+    const input = [
+      'Brown, Wendy. Undoing the Demos: Neoliberalism\'s Stealth Revolution. MIT Press, 2015.',
+      'Carnap, Rudolf. Logical Foundations of Probability. Vol. 2. Chicago: University of Chicago Press, 1962.',
+      'Cohen, L. Jonathan. "Some steps towards a general theory of relevance." Synthese 101 (1994): 171-',
+      '185.',
+    ].join('\n')
+    const result = fixLineBreaks(input)
+    expect(result).toContain('171-185')
+    expect(result).not.toContain('171- 185')
+    expect(result).not.toContain('171185')
   })
 })
 

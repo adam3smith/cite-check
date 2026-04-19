@@ -10,7 +10,7 @@ const JOURNAL_SIGNALS =
 // Case-sensitive "In" — require capital I after sentence-ending punctuation to avoid
 // matching lowercase preposition "in" (e.g. "in Germany", "in modern Italy").
 // Allow an optional closing quote between the period and " In" (common in Chicago style).
-const BOOK_CHAPTER_SIGNALS = /[.;]["""\u201d]?\s+In:?\s+[A-Z]|\bed(s?)\.\s*,.*?pp\./
+const BOOK_CHAPTER_SIGNALS = /[.;!?]["""\u201d]?\s+In:?\s+[A-Z]|\bed(s?)\.\s*,.*?pp\./
 const BOOK_SIGNALS =
   /\b(press|publisher|publishing|edition|2nd ed|3rd ed|\bed\b\.?\s*$|university press)\b/i
 const WEBSITE_SIGNALS = /https?:\/\/|www\.|accessed\b|retrieved\b/i
@@ -29,6 +29,12 @@ export function classifyType(raw: string): { type: ReferenceType; confidence: Co
   // Book chapter — must come before book (chapters can mention press)
   if (BOOK_CHAPTER_SIGNALS.test(text)) {
     return { type: 'book-chapter', confidence: 'high' }
+  }
+
+  // Chicago bibliography style: year at end (", YYYY.") with book signals → book
+  // Must precede JOURNAL_SIGNALS to prevent "Vol. N" triggering journal-article classification
+  if (/,\s*(1[5-9]\d\d|20\d\d)\.?\s*$/.test(text) && BOOK_SIGNALS.test(text)) {
+    return { type: 'book', confidence: 'medium' }
   }
 
   // Journal article

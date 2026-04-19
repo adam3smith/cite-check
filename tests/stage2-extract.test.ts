@@ -414,3 +414,130 @@ describe('extractFields — fixture integration', () => {
     })
   })
 })
+
+// ── extractFields: Chicago bibliography (date at end) ────────────────────────
+
+describe('extractFields — Chicago 18th bibliography format (year at end)', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const carnap =
+    'Carnap, Rudolf. Logical Foundations of Probability. Vol. 2. Chicago: University of Chicago Press, 1962.'
+
+  it('classifies Carnap as book (not journal-article despite "Vol.")', () => {
+    expect(classifyType(carnap).type).toBe('book')
+  })
+  it('extracts author Carnap', () => {
+    expect(extractFields(makeEntry(carnap)).authors[0]?.last).toBe('Carnap')
+  })
+  it('extracts year 1962', () => {
+    expect(extractFields(makeEntry(carnap)).year).toBe('1962')
+  })
+  it('extracts title containing "Logical Foundations"', () => {
+    expect(extractFields(makeEntry(carnap)).title).toContain('Logical Foundations')
+  })
+  it('extracts publisher (strips Vol. prefix and city prefix)', () => {
+    const container = extractFields(makeEntry(carnap)).container
+    expect(container).toContain('University of Chicago Press')
+  })
+
+  const brown =
+    'Brown, Wendy. Undoing the Demos: Neoliberalism\'s Stealth Revolution. MIT Press, 2015.'
+
+  it('extracts author Brown', () => {
+    expect(extractFields(makeEntry(brown)).authors[0]?.last).toBe('Brown')
+  })
+  it('extracts year 2015', () => {
+    expect(extractFields(makeEntry(brown)).year).toBe('2015')
+  })
+  it('extracts title containing "Undoing the Demos"', () => {
+    expect(extractFields(makeEntry(brown)).title).toContain('Undoing the Demos')
+  })
+  it('extracts publisher MIT Press', () => {
+    expect(extractFields(makeEntry(brown)).container).toContain('MIT Press')
+  })
+})
+
+// ── extractFields: book-chapter with quoted title (bibliography style) ────────
+
+describe('extractFields — book-chapter with quoted title (Chicago bib style)', () => {
+  function makeEntry(raw: string): RawEntry {
+    const { type, confidence } = classifyType(raw)
+    return { index: 0, raw, type, parseConfidence: confidence }
+  }
+
+  const conti =
+    'Conti, Greg. \u201cDemocracy and the Press in Rosanvallon\u2019s Historiography.\u201d In Oliver Fl\u00fcgel-Martinsen, Franziska Martinsen, Stephen W. Sawyer and Daniel Schulz eds. Pierre Rosanvallon\u2019s Political Thought. Bielefeld University Press, 2018, pp. 133-157.'
+
+  it('classifies Conti as book-chapter', () => {
+    expect(classifyType(conti).type).toBe('book-chapter')
+  })
+  it('extracts author Conti', () => {
+    expect(extractFields(makeEntry(conti)).authors[0]?.last).toBe('Conti')
+  })
+  it('extracts year 2018', () => {
+    expect(extractFields(makeEntry(conti)).year).toBe('2018')
+  })
+  it('extracts chapter title (no trailing period)', () => {
+    const title = extractFields(makeEntry(conti)).title
+    expect(title).toContain('Democracy and the Press')
+    expect(title).not.toMatch(/\.$/)
+  })
+  it('extracts book title as container', () => {
+    expect(extractFields(makeEntry(conti)).container).toContain('Rosanvallon')
+  })
+  it('extracts pages 133', () => {
+    expect(extractFields(makeEntry(conti)).pages).toContain('133')
+  })
+
+  const whitney =
+    'Whitney, Heather M., and Robert Mark Simpson. \u201cSearch Engines and Free Speech Coverage.\u201d In Susan Brison and Katharine Gelber eds. Free Speech in the Digital Age. Oxford: Oxford University Press, 2019.'
+
+  it('classifies Whitney as book-chapter', () => {
+    expect(classifyType(whitney).type).toBe('book-chapter')
+  })
+  it('extracts first author Whitney', () => {
+    expect(extractFields(makeEntry(whitney)).authors[0]?.last).toBe('Whitney')
+  })
+  it('extracts second author Simpson', () => {
+    expect(extractFields(makeEntry(whitney)).authors[1]?.last).toBe('Simpson')
+  })
+  it('extracts year 2019', () => {
+    expect(extractFields(makeEntry(whitney)).year).toBe('2019')
+  })
+  it('extracts chapter title', () => {
+    expect(extractFields(makeEntry(whitney)).title).toContain('Search Engines')
+  })
+  it('extracts book title as container', () => {
+    expect(extractFields(makeEntry(whitney)).container).toContain('Free Speech in the Digital Age')
+  })
+  it('pages null (none listed)', () => {
+    expect(extractFields(makeEntry(whitney)).pages).toBeNull()
+  })
+
+  const benson =
+    'Benson, Rodney. \u201cPublic funding and journalistic independence: What does research tell us?\u201d In Robert W. McChesney and Victor Pickard eds. Will the Last Reporter Please Turn Out the Lights? The New Press, 2011, pp. 314-319.'
+
+  it('classifies Benson (chapter title ends with ?) as book-chapter', () => {
+    expect(classifyType(benson).type).toBe('book-chapter')
+  })
+  it('extracts author Benson', () => {
+    expect(extractFields(makeEntry(benson)).authors[0]?.last).toBe('Benson')
+  })
+  it('extracts year 2011', () => {
+    expect(extractFields(makeEntry(benson)).year).toBe('2011')
+  })
+  it('extracts chapter title (ending with ?)', () => {
+    const title = extractFields(makeEntry(benson)).title
+    expect(title).toContain('journalistic independence')
+    expect(title).toMatch(/\?$/)
+  })
+  it('extracts book title as container (title ending with ?)', () => {
+    expect(extractFields(makeEntry(benson)).container).toContain('Last Reporter')
+  })
+  it('extracts pages 314', () => {
+    expect(extractFields(makeEntry(benson)).pages).toContain('314')
+  })
+})

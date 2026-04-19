@@ -231,6 +231,8 @@ function extractContainerFromRemainder(remainder: string, _type: string): string
   if (!remainder.trim()) return null
   // Strip leading punctuation
   let s = remainder.replace(/^[.,;\s]+/, '').trim()
+  // Strip "Vol. N." or "Vol. N," prefix (Chicago bib edition notation before publisher)
+  s = s.replace(/^vol\.\s*\d+[.,]?\s*/i, '')
   // For book chapters: container is after "In " — ignore it, return publisher
   if (/^In:?\s+/i.test(s)) {
     // publisher is near the end
@@ -263,13 +265,60 @@ export function extractFields(entry: RawEntry): ParsedReference {
     .replace(/\s+/g, ' ')
     .trim()
 
+  // ── Book-chapter with quoted chapter title ───────────────────────────────
+  // Chicago bibliography / endnote style:
+  //   Author. "Chapter Title." In Editor(s) eds. Book Title. Publisher[, YEAR[, pp. N–M]].
+  // Guard: if the pre-quote segment contains a year, this is author-date style → fall through.
+  if (entry.type === 'book-chapter') {
+    const chapterMatch = cleaned.match(/^(.+?)\.\s*["""\u201c](.*?)["""\u201d]/)
+    if (chapterMatch && !/\b(1[5-9]\d\d|20\d\d)\b/.test(chapterMatch[1])) {
+      const authors = extractAuthors(chapterMatch[1])
+      const chapterTitle = chapterMatch[2].replace(/\.$/, '').trim()
+
+      // Find closing-quote followed by " In" to locate the editor/book portion
+      const inIdx = cleaned.search(/["""\u201d]\s+In\b/i)
+      const afterIn = inIdx >= 0
+        ? cleaned.slice(inIdx + 1).replace(/^\s*In:?\s*/i, '').trim()
+        : ''
+
+      // Skip editor names: take everything after "eds?." or "ed."
+      const edMatch = afterIn.match(/^(.*?)\beds?\.\s+(.+)$/i)
+      const afterEds = edMatch ? edMatch[2].trim() : afterIn
+
+      // Book title = first sentence segment of afterEds (title may end with . ? or !)
+      const firstSentEnd = afterEds.search(/[.?!]\s+/)
+      const container = firstSentEnd > 0
+        ? afterEds.slice(0, firstSentEnd + 1).trim() || null
+        : afterEds.replace(/[.,\s]+$/, '').trim() || null
+
+      // Pages from "pp. N–M" anywhere in afterEds
+      const pagesM = afterEds.match(/\bpp?\.\s*([\d–\-]+(?:[–\-][\d]+)?)/)
+      const pages = pagesM ? pagesM[1] : null
+
+      return {
+        ...entry,
+        authors,
+        year,
+        title: chapterTitle,
+        container,
+        doi,
+        url,
+        isbn,
+        pages,
+        volume: null,
+        issue: null,
+      }
+    }
+  }
+
   // ── Back-date format detection ────────────────────────────────────────────
   // MLA:       AUTHOR. "Title." Journal Vol, no. Issue (YEAR): Pages.
   // Vancouver: AUTHOR. Title. Journal. YEAR;Vol(Issue):Pages.
   // Both have unambiguous year markers never seen in author-date format.
   const isBackDate =
     /\((1[5-9]\d\d|20\d\d)\)\s*:/.test(cleaned) ||   // MLA: (YEAR):
-    /\b(1[5-9]\d\d|20\d\d);/.test(cleaned)            // Vancouver: YEAR;
+    /\b(1[5-9]\d\d|20\d\d);/.test(cleaned) ||         // Vancouver: YEAR;
+    /,\s*(1[5-9]\d\d|20\d\d)\.?\s*$/.test(cleaned)   // Chicago bib: ends with ", YYYY."
 
   if (isBackDate && year) {
     // Author block ends at the first period before a quoted title or a title-case word

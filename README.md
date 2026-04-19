@@ -4,7 +4,7 @@ A browser-based tool for validating academic reference lists. Paste a reference 
 
 Designed for author-date citation styles (Chicago, APA). Works with numbered lists, hanging-indent, and blank-line separated entries.
 
-**Live app:** https://karchlab.github.io/cite-check/
+**Live app:** https://adam3smith.github.io/cite-check/
 
 ## How it works
 
@@ -117,4 +117,4 @@ Canonical reference strings live in `tests/fixtures/references.ts`. Each fixture
 
 ## License
 
-MIT. Created by [Sebastian Karcher](https://github.com/karchlab) with [Claude Code](https://claude.ai/code).
+MIT. Created by [Sebastian Karcher](https://github.com/adam3smith) with [Claude Code](https://claude.ai/code).

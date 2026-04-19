@@ -248,6 +248,19 @@ export function citeCheckApp(): CiteCheckApp {
           continue
         }
 
+        // Hyphen-continuation: must run before the short-line check so a line like "185."
+        // following "…171-" joins as "…171-185." rather than "…171- 185."
+        if (/[a-zA-Z]-$/.test(trimmed)) {
+          // Letter-hyphen: word break — remove hyphen and join without space
+          buffer = trimmed.replace(/-$/, '') + nextTrimmed
+          continue
+        }
+        if (/\d-$/.test(trimmed)) {
+          // Digit-hyphen: page-range continuation — keep hyphen and join without space
+          buffer = trimmed + nextTrimmed
+          continue
+        }
+
         // Short next line (≤3 words) that doesn't look like a new reference —
         // join it even if the buffer ends with a period.
         // Catches publisher lines like "Cambridge University Press." after a book title.
@@ -257,9 +270,13 @@ export function citeCheckApp(): CiteCheckApp {
           continue
         }
 
-        // Pattern A: current line ends with a 4-digit year + period → always continuation
-        // (author chain + year, title follows on next line)
-        if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)) {
+        // Pattern A: current line ends with a 4-digit year + period → continuation
+        // (author chain + year, title follows on next line).
+        // Excluded: year preceded by comma ("MIT Press, 2015." = Chicago bib year-at-end).
+        // Excluded: next line looks like a new reference (would produce a false join).
+        if (/\b(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)
+            && !/,\s*(1[5-9]\d\d|20\d\d)\.\s*$/.test(trimmed)
+            && !nextIsNewRef) {
           buffer = trimmed + ' ' + nextTrimmed
           continue
         }
@@ -292,9 +309,6 @@ export function citeCheckApp(): CiteCheckApp {
         if (endsWithPeriod) {
           result.push(buffer)
           buffer = line
-        } else if (/\w-$/.test(trimmed)) {
-          // Hyphenated word break: remove the hyphen, join without space
-          buffer = trimmed.replace(/-$/, '') + nextTrimmed
         } else {
           buffer = trimmed + ' ' + nextTrimmed
         }
