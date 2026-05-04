@@ -68,6 +68,7 @@ cite-check/
 ├── src/
 │   ├── main.ts                        # entry point
 │   ├── app.ts                         # Alpine component factory
+│   ├── config.ts                      # contact email and other site-wide settings
 │   ├── types.ts                       # shared TypeScript interfaces
 │   ├── declarations.d.ts              # type stubs for untyped packages
 │   ├── stages/
@@ -114,6 +115,53 @@ The base path is `/cite-check/` (configured in `vite.config.ts`).
 ### Adding test fixtures
 
 Canonical reference strings live in `tests/fixtures/references.ts`. Each fixture has an `id`, the `raw` reference string, and expected field values used across multiple test files. When adding new reference types or edge cases, add a fixture there first.
+
+## Setting up your own instance
+
+### 1. Fork and clone
+
+Fork the repository on GitHub, then clone it locally:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/cite-check.git
+cd cite-check
+```
+
+### 2. Install dependencies
+
+Requires [Node.js](https://nodejs.org/en/download/current) 20 or later. Install dependencies with:
+
+```bash
+npm install
+```
+
+### 4. Update the API contact email
+
+CrossRef and OpenAlex ask that clients identify themselves via a mailto parameter, which grants access to their faster "polite" API pools. Set `CONTACT_EMAIL` in `src/config.ts` to your own address, replacing mine ('karcher@u.northwestern.edu').
+
+### 5. Google Books API key (optional)
+
+Without an API key, Google Books requests use the shared anonymous quota, which is exhausted quickly. To use your own quota:
+
+1. Create a project in the [Google Cloud Console](https://console.cloud.google.com/) and enable the Books API.
+2. Create an API key under **APIs & Services → Credentials**. This will allow for up to 1,000 Google book queries/day
+3. Create a `.env` file at the project root:
+
+```
+VITE_GOOGLE_BOOKS_API_KEY=your_key_here
+```
+
+The `.env` file is gitignored. For the GitHub Actions deploy, add the key as a repository secret named `VITE_GOOGLE_BOOKS_API_KEY` under **Settings → Secrets and variables → Actions**.
+
+### 6. Enable GitHub Pages
+
+1. In your fork's settings, go to **Pages** and set the source to **GitHub Actions**.
+2. Update `vite.config.ts`: change `base: '/cite-check/'` to `base: '/YOUR_REPO_NAME/'`.
+3. Push to `main`. The Actions workflow runs tests, builds, and deploys automatically.
+
+Your instance will be live at `https://YOUR_USERNAME.github.io/YOUR_REPO_NAME/`.
+
+---
 
 ## License
 

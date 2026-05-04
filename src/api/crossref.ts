@@ -1,8 +1,9 @@
 import type { AuthorName, LookupResult, NormalizedWork, ParsedReference, ReferenceType } from '../types'
 import { scoreReference, weightedTotal } from '../lib/string-distance'
+import { CONTACT_EMAIL } from '../config'
 
 const BASE = 'https://api.crossref.org'
-const MAILTO = 'mailto=karcher@u.northwestern.edu'
+const MAILTO = `mailto=${CONTACT_EMAIL}`
 
 // ── Response normalization ────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ export async function searchByTitleAuthor(
     'query.title': title,
     ...(authorParam ? { 'query.author': authorParam } : {}),
     rows: String(rows),
-    mailto: 'karcher@u.northwestern.edu',
+    mailto: CONTACT_EMAIL,
   })
 
   const url = `${BASE}/works?${params}`

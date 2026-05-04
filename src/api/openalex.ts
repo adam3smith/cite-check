@@ -1,8 +1,9 @@
 import type { AuthorName, LookupResult, NormalizedWork, ParsedReference, ReferenceType } from '../types'
 import { scoreReference, weightedTotal } from '../lib/string-distance'
+import { CONTACT_EMAIL } from '../config'
 
 const BASE = 'https://api.openalex.org'
-const MAILTO = 'mailto=karcher@u.northwestern.edu'
+const MAILTO = `mailto=${CONTACT_EMAIL}`
 
 // ── Response normalization ────────────────────────────────────────────────────
 
