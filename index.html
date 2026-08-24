@@ -159,7 +159,7 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
                 @click="aiRecheckAll()"
                 :disabled="aiBusy"
                 x-show="llmEnabled && aiRecheckable.length > 0"
-                title="Ask Claude to double-check weak/not-found references and search for close matches. Skips 'unverifiable' website references — the browser can't confirm those either way, so there's little for the AI to add."
+                title="Ask Claude to double-check the checked references below and search for close matches. Weak-match/not-found references are checked by default — use the checkboxes on each card to add or remove references."
               >
                 <span x-text="aiBusy ? `Asking Claude… (${aiProgressCurrent}/${aiProgressTotal})` : `✨ AI Double-Check (${aiRecheckable.length})`"></span>
               </button>
@@ -190,8 +190,23 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
             <template x-for="ref in verified" :key="ref.index">
               <div class="ref-card" :class="`status-${ref.verificationStatus}`">
                 <div class="ref-card-main" @click="toggleExpand(ref.index)" style="cursor:pointer">
+                  <input
+                    type="checkbox"
+                    class="ai-select-checkbox"
+                    x-show="llmEnabled"
+                    x-model="ref.aiSelected"
+                    @click.stop
+                    title="Include this reference in the next AI Double-Check"
+                  />
                   <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
                   <span class="ref-type" x-text="ref.type"></span>
+                  <template x-if="ref.aiCheck">
+                    <span
+                      class="badge ai-verdict-badge"
+                      :class="`verdict-${ref.aiCheck.verdict}`"
+                      x-text="'🤖 ' + ref.aiCheck.verdict.replace('-', ' ')"
+                    ></span>
+                  </template>
                   <p class="ref-citation" x-text="ref.formattedCitation ?? ref.raw"></p>
                   <template x-if="ref.discrepancies.length > 0">
                     <p class="discrepancy-hint">
@@ -224,6 +239,36 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
                       </template>
                     </div>
                   </template>
+                  <template x-if="ref.aiCheck">
+                    <div class="ai-check">
+                      <p class="ai-check-header">
+                        <span class="badge ai-verdict-badge" :class="`verdict-${ref.aiCheck.verdict}`" x-text="ref.aiCheck.verdict.replace('-', ' ')"></span>
+                        <span class="ai-check-model" x-text="ref.aiCheck.model"></span>
+                      </p>
+                      <p class="ai-check-note" x-text="ref.aiCheck.note"></p>
+                      <template x-if="ref.aiCheck.suggestedFields">
+                        <div class="ai-check-fields discrepancies">
+                          <span class="detail-label">Side-by-side:</span>
+                          <template x-for="row in $aiFieldRows(ref)" :key="row.label">
+                            <div class="discrepancy-item" :class="ref.aiCheck.verdict === 'partially-fabricated' ? 'severity-major' : 'severity-minor'">
+                              <strong x-text="row.label + ':'"></strong>
+                              <span x-text="`Input: ${row.input}`"></span>
+                              <span x-text="`Found: ${row.found}`"></span>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
+                      <p class="ai-check-suggestion" x-show="ref.aiCheck.suggestedCitation">
+                        <strong>Suggested citation:</strong> <span x-text="ref.aiCheck.suggestedCitation"></span>
+                      </p>
+                      <p class="ai-check-sources" x-show="ref.aiCheck.sources.length > 0">
+                        <strong>Sources:</strong>
+                        <template x-for="src in ref.aiCheck.sources" :key="src">
+                          <a :href="src" target="_blank" x-text="src"></a>
+                        </template>
+                      </p>
+                    </div>
+                  </template>
                 </div>
               </div>
             </template>
@@ -241,6 +286,14 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
                 <template x-for="ref in group" :key="ref.index">
                   <div class="ref-card unverified-card" @click="toggleExpand(ref.index)" style="cursor:pointer">
                     <div class="ref-card-main">
+                      <input
+                        type="checkbox"
+                        class="ai-select-checkbox"
+                        x-show="llmEnabled"
+                        x-model="ref.aiSelected"
+                        @click.stop
+                        title="Include this reference in the next AI Double-Check"
+                      />
                       <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
                       <span class="ref-type" x-text="ref.type"></span>
                       <template x-if="ref.aiCheck">

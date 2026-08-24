@@ -134,11 +134,12 @@ export function citeCheckApp(): CiteCheckApp {
       )
     },
 
-    // Unverified references worth spending an AI Double-Check call on. Excludes
-    // 'unverifiable' (mostly website URLs the browser can't confirm either way —
-    // a local skill with real network access could just curl these instead).
+    // References the user has selected (via the per-card checkbox) for the next AI
+    // Double-Check run. Defaults are set when each reference is pushed in run() —
+    // checked for weak-match/not-found, unchecked otherwise — but the checkbox lets
+    // the user freely move any reference into or out of the set.
     get aiRecheckable() {
-      return this.unverified.filter((r) => r.verificationStatus !== 'unverifiable')
+      return this.references.filter((r) => r.aiSelected)
     },
 
     get unverifiedByStatus() {
@@ -235,7 +236,10 @@ export function citeCheckApp(): CiteCheckApp {
             const lookupResult = await lookupReference(ref)
             this.stage = 4
             const verified = await verifyReference(lookupResult)
-            this.references.push(verified)
+            this.references.push({
+              ...verified,
+              aiSelected: verified.verificationStatus === 'weak-match' || verified.verificationStatus === 'not-found',
+            })
           } catch (e) {
             // On unexpected error, push a not-found entry so the reference isn't silently dropped
             console.error('Error processing reference:', ref.raw, e)
@@ -249,6 +253,7 @@ export function citeCheckApp(): CiteCheckApp {
               formattedCitation: null,
               discrepancies: [],
               verificationStatus: 'not-found',
+              aiSelected: true,
             })
           }
         }
@@ -455,11 +460,7 @@ export function citeCheckApp(): CiteCheckApp {
       try {
         for (let i = 0; i < this.references.length; i++) {
           const ref = this.references[i]
-          if (
-            ref.verificationStatus === 'verified' ||
-            ref.verificationStatus === 'likely-match' ||
-            ref.verificationStatus === 'unverifiable'
-          ) continue
+          if (!ref.aiSelected) continue
           this.aiProgressCurrent++
           try {
             const aiCheck = await recheckReference(this.llmApiKey, this.llmModel, ref)

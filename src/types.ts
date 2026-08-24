@@ -89,6 +89,10 @@ export interface VerifiedReference extends LookupResult {
   discrepancies: Discrepancy[]
   verificationStatus: VerificationStatus
   aiCheck?: AiCheckResult | null
+  /** Whether this reference is included in the next AI Double-Check run. Defaults to
+   *  true for weak-match/not-found and false otherwise, but is user-editable via a
+   *  checkbox in the results UI — not derived from verificationStatus at read time. */
+  aiSelected?: boolean
 }
 
 export type AiCheckVerdict =

@@ -367,6 +367,15 @@ footer a:hover { text-decoration: underline; }
 
 .ref-card-main:hover { background: var(--color-bg); }
 
+.ai-select-checkbox {
+  align-self: center;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+  flex-shrink: 0;
+}
+
 .ref-citation {
   flex-basis: 100%;
   font-size: 0.88rem;
