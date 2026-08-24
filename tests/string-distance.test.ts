@@ -3,6 +3,7 @@ import {
   jaro,
   jaroWinkler,
   fieldScore,
+  firstNameScore,
   titleFieldScore,
   tokenJaccard,
   scoreReference,
@@ -215,6 +216,57 @@ describe('scoreReference', () => {
     const badApi = { ...apiData, authors: [{ last: 'Smith', first: 'John' }] }
     expect(scoreReference(parsed, badApi).author).toBeLessThan(0.7)
   })
+
+  it('penalizes a different full first name behind a matching last name (same-surname mismatch)', () => {
+    // Real case: a citation's DOI resolves to a different paper by a different "Liu" and
+    // a different "Shiraito" — same surnames, different people. Last-name-only scoring
+    // used to call this a perfect 1.0 author match.
+    const sameSurnameDifferentPerson = {
+      ...apiData,
+      authors: [
+        { last: 'Liu', first: 'Guoer' },
+        { last: 'Shiraito', first: 'Yuki' },
+      ],
+    }
+    const citedAuthors: ParsedReference = {
+      ...parsed,
+      authors: [
+        { last: 'Liu', first: 'Liyang' },
+        { last: 'Shiraito', first: 'Hirokazu' },
+      ],
+    }
+    const score = scoreReference(citedAuthors, sameSurnameDifferentPerson).author
+    expect(score).toBeLessThan(0.8) // must read as at least a "major" discrepancy, not near-perfect
+  })
+})
+
+// ── firstNameScore ────────────────────────────────────────────────────────────
+
+describe('firstNameScore', () => {
+  it('returns 1 for an exact match', () => {
+    expect(firstNameScore('John', 'John')).toBe(1)
+  })
+  it('returns 1 when either side is missing (nothing to compare)', () => {
+    expect(firstNameScore(null, 'John')).toBe(1)
+    expect(firstNameScore('John', null)).toBe(1)
+  })
+  it('does not penalize an initial vs. the matching full first name', () => {
+    expect(firstNameScore('J.', 'John')).toBe(1)
+    expect(firstNameScore('J', 'John')).toBe(1)
+  })
+  it('does not penalize a run of initials vs. a full first name sharing the first letter', () => {
+    expect(firstNameScore('J.M.', 'John')).toBe(1)
+  })
+  it('penalizes an initial that disagrees with the full name\'s first letter', () => {
+    expect(firstNameScore('J.', 'Karen')).toBeLessThan(1)
+  })
+  it('penalizes two clearly different full first names', () => {
+    expect(firstNameScore('Liyang', 'Guoer')).toBeLessThan(0.7)
+    expect(firstNameScore('Hirokazu', 'Yuki')).toBeLessThan(0.7)
+  })
+  it('does not penalize minor spelling/typo differences between full names', () => {
+    expect(firstNameScore('Katherine', 'Catherine')).toBeGreaterThan(0.8)
+  })
 })
 
 // ── expandPageRange ───────────────────────────────────────────────────────────
@@ -283,5 +335,24 @@ describe('scoreToStatus', () => {
   })
   it('unverifiable when lookupStatus is unverifiable', () => {
     expect(scoreToStatus(0.99, 'unverifiable')).toBe('unverifiable')
+  })
+
+  describe('journal-article likely-match threshold (0.80 instead of 0.70)', () => {
+    it('weak-match for 0.70–0.79 when type is journal-article', () => {
+      expect(scoreToStatus(0.79, 'found', 'journal-article')).toBe('weak-match')
+      expect(scoreToStatus(0.70, 'found', 'journal-article')).toBe('weak-match')
+    })
+    it('likely-match for 0.80–0.89 when type is journal-article', () => {
+      expect(scoreToStatus(0.85, 'found', 'journal-article')).toBe('likely-match')
+      expect(scoreToStatus(0.80, 'found', 'journal-article')).toBe('likely-match')
+    })
+    it('verified for score >= 0.90 regardless of type', () => {
+      expect(scoreToStatus(0.90, 'found', 'journal-article')).toBe('verified')
+    })
+    it('other reference types keep the 0.70 threshold', () => {
+      expect(scoreToStatus(0.70, 'found', 'book')).toBe('likely-match')
+      expect(scoreToStatus(0.70, 'found', 'book-chapter')).toBe('likely-match')
+      expect(scoreToStatus(0.70, 'found')).toBe('likely-match')
+    })
   })
 })

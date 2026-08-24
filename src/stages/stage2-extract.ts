@@ -97,9 +97,37 @@ export function extractAuthors(segment: string): AuthorName[] {
   return authors
 }
 
+// Lowercase surname particles ("Jeroen van den Bergh", "Ludwig von Mises") that belong
+// to the last name, not the first — only checked when the word is actually lowercase in
+// the source text, so a genuine capitalized name is never mistaken for one.
+const NAME_PARTICLES = new Set([
+  'van', 'von', 'der', 'den', 'ten', 'ter', 'te', 'zu', 'zur', 'af', 'av',
+  'de', 'du', 'des', 'la', 'le',
+  'di', 'da', 'del', 'della', 'dello', 'degli', 'dei', 'dos', 'das', 'do',
+  'al', 'el', 'bin', 'ibn',
+])
+
+/**
+ * Split "First [Middle] [particles] Last" into { first, last }, walking backward from
+ * the final word and absorbing any lowercase particles immediately preceding it into
+ * the surname (e.g. "Jeroen van den Bergh" → last "van den Bergh", not just "Bergh").
+ */
+function splitFirstLastWithParticles(words: string[]): { first: string; last: string } {
+  let start = words.length - 1
+  while (start > 0 && words[start - 1] === words[start - 1].toLowerCase() && NAME_PARTICLES.has(words[start - 1])) {
+    start--
+  }
+  return { first: words.slice(0, start).join(' '), last: words.slice(start).join(' ') }
+}
+
 function parseOneName(s: string): AuthorName | null {
   s = s.trim().replace(/\.$/, '').trim()
   if (!s) return null
+
+  // Chicago-style "same author as previous entry" placeholder (———, ----, etc.) —
+  // never a real name. Filling it in from the previous entry is handled separately
+  // by fillRepeatedAuthors(); here we just make sure it isn't parsed as a literal name.
+  if (/^[-–—]{2,}$/.test(s)) return null
 
   // "Last, First [M.]" format
   const commaMatch = s.match(/^([A-ZÀ-Ÿa-z\-']+(?:\s+[A-ZÀ-Ÿa-z\-']+)*),\s*(.+)/)
@@ -118,7 +146,7 @@ function parseOneName(s: string): AuthorName | null {
       return { last: words.slice(0, -1).join(' '), first: lastToken }
     }
     // "First Last" format (less reliable)
-    return { last: lastToken, first: words.slice(0, -1).join(' ') }
+    return splitFirstLastWithParticles(words)
   }
 
   // Single word — treat as last name
@@ -392,4 +420,37 @@ export function extractFields(entry: RawEntry): ParsedReference {
     volume,
     issue,
   }
+}
+
+// ── Repeated-author placeholder fill-in ────────────────────────────────────────
+
+// Chicago-style bibliographies replace a repeated author with a run of dashes
+// (———, ----, --, etc.) instead of repeating the name. Matches only when the dash
+// run is the entry's author position (start of the line, followed by the usual
+// author-ending punctuation).
+const REPEATED_AUTHOR_PLACEHOLDER = /^[-–—]{2,}\s*[.,;:]/
+
+export function isRepeatedAuthorPlaceholder(raw: string): boolean {
+  return REPEATED_AUTHOR_PLACEHOLDER.test(raw.trim())
+}
+
+/**
+ * Fill in dash-placeholder authors from the nearest preceding entry that has real
+ * authors. Must run after extractFields, over entries in their original order —
+ * a single entry's fields carry no information about neighboring entries.
+ */
+export function fillRepeatedAuthors(entries: ParsedReference[]): ParsedReference[] {
+  let previousAuthors: AuthorName[] = []
+  const result: ParsedReference[] = []
+
+  for (const entry of entries) {
+    if (isRepeatedAuthorPlaceholder(entry.raw) && previousAuthors.length > 0) {
+      result.push({ ...entry, authors: previousAuthors })
+      continue
+    }
+    result.push(entry)
+    if (entry.authors.length > 0) previousAuthors = entry.authors
+  }
+
+  return result
 }

@@ -298,7 +298,7 @@ footer a:hover { text-decoration: underline; }
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
 }
 
 .results-header h2 {
@@ -310,6 +310,26 @@ footer a:hover { text-decoration: underline; }
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.status-summary {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin-bottom: 1rem;
+}
+
+.ai-progress-wrap {
+  margin-bottom: 1rem;
+}
+
+.ai-check-summary-line {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin: -0.5rem 0 1.5rem;
+}
+
+.ai-check-summary-line strong {
+  color: var(--color-text);
 }
 
 .result-section {
@@ -489,6 +509,112 @@ footer a:hover { text-decoration: underline; }
   padding: 0.12rem 0.45rem;
   white-space: nowrap;
 }
+
+/* ── AI Assist settings panel ─────────────────────────────────────────────── */
+
+.ai-settings-body {
+  padding: 0 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ai-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ai-settings-row label {
+  min-width: 140px;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  margin-bottom: 0;
+}
+
+.ai-settings-row input,
+.ai-settings-row select {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* ── AI double-check result ───────────────────────────────────────────────── */
+
+.ai-check {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ai-check-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-verdict-badge {
+  background: var(--color-unverifiable-bg);
+  color: var(--color-unverifiable-text);
+  border: 1px solid var(--color-unverifiable-border);
+  text-transform: none;
+}
+
+.ai-verdict-badge.verdict-confirmed {
+  background: var(--color-verified-bg);
+  color: var(--color-verified);
+  border-color: var(--color-verified-border);
+}
+
+.ai-verdict-badge.verdict-corrected {
+  background: var(--color-likely-bg);
+  color: var(--color-likely-text);
+  border-color: var(--color-likely-border);
+}
+
+/* Elevated alert: title matches but multiple major details (authors/journal/pages) are wrong —
+   a stronger warning than "corrected" since this pattern is common with hallucinated citations. */
+.ai-verdict-badge.verdict-partially-fabricated {
+  background: var(--color-weak-bg);
+  color: var(--color-weak-text);
+  border-color: var(--color-weak-border);
+}
+
+.ai-verdict-badge.verdict-likely-fabricated {
+  background: var(--color-notfound-bg);
+  color: var(--color-notfound-text);
+  border-color: var(--color-notfound-border);
+}
+
+.ai-check-fields {
+  padding-top: 0.15rem;
+}
+
+.ai-check-model {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.ai-check-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ai-check-sources a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.ai-check-sources a:hover { text-decoration: underline; }
 
 /* ── Utility ───────────────────────────────────────────────────────────────── */
 

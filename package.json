@@ -16,6 +16,7 @@
     "vitest": "^4.1.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.4",
     "@citation-js/core": "^0.7.21",
     "@citation-js/plugin-csl": "^0.7.22",
     "@citation-js/plugin-doi": "^0.7.21",

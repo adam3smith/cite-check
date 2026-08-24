@@ -28,6 +28,8 @@ Weighted total: title 40%, author 30%, year 15%, journal/publisher 10%, pages 5%
 | 0.50–0.69 | Weak match |
 | < 0.50 | Not found |
 
+For journal articles, the likely-match bar is raised to 0.80 (weak-match becomes 0.70–0.79): CrossRef/OpenAlex index nearly all published journal articles, so a 70–79% match is more often a real discrepancy worth a closer look than the online-first/print-date noise that explains most sub-90% scores for other reference types.
+
 ### APIs used
 
 | Reference type | Primary | Fallback |
@@ -39,6 +41,15 @@ Weighted total: title 40%, author 30%, year 15%, journal/publisher 10%, pages 5%
 | Website | Browser fetch probe | — |
 
 All queries are made directly from your browser. No data passes through any intermediary server.
+
+### AI Assist (optional)
+
+If you add your own Anthropic API key under "AI Assist" on the input screen, two extra features appear:
+
+- **AI Fix Line Breaks** — asks Claude to re-join lines broken mid-entry by PDF copy-paste, as an alternative to the built-in heuristic.
+- **AI Double-Check** — for references the pipeline couldn't verify, asks Claude (with web search) to judge whether the citation is a real work cited with errors, a fabricated/hallucinated citation, or a real match the databases above just don't index — and to suggest a corrected citation when it finds one.
+
+This is entirely optional and off by default. Your key is stored only in your browser's local storage and sent directly from your browser to Anthropic's API — never through any server this app controls, the same trust model as pasting your own Google Books key. Without a key, the app behaves exactly as described above.
 
 ### Citation formatting
 
@@ -58,6 +69,7 @@ cite-check sends reference metadata (titles, authors, DOIs) to the APIs listed a
 - [Alpine.js](https://alpinejs.dev/) (CDN) for reactive UI
 - [citation.js](https://citation.js.org/) for Chicago Author-Date formatting
 - [Vitest](https://vitest.dev/) for unit tests
+- [Anthropic TypeScript SDK](https://github.com/anthropics/anthropic-sdk-typescript) for the optional AI Assist features (loaded lazily — only fetched if a user supplies an API key)
 
 ### Project structure
 
@@ -85,7 +97,10 @@ cite-check/
 │   └── lib/
 │       ├── string-distance.ts         # Jaro-Winkler, token Jaccard, field scoring
 │       ├── citation-format.ts         # citation.js wrapper
-│       └── rate-limiter.ts            # token bucket (1 req/sec per domain)
+│       ├── rate-limiter.ts            # token bucket (1 req/sec per domain)
+│       ├── llm-models.ts              # Claude model catalog + pricing
+│       ├── llm-client.ts              # lazy-loaded Anthropic SDK wrapper (BYOK)
+│       └── llm-tasks.ts               # AI Fix Line Breaks + AI Double-Check prompts
 ├── tests/
 │   ├── fixtures/references.ts         # canonical test reference strings
 │   ├── stage1-parse.test.ts

@@ -64,13 +64,13 @@ export async function verifyReference(lookup: LookupResult): Promise<VerifiedRef
       fieldScores: { author: 0, title: 0, year: 0, container: 0, pages: 0 },
       formattedCitation: null,
       discrepancies: [],
-      verificationStatus: scoreToStatus(0, lookup.lookupStatus),
+      verificationStatus: scoreToStatus(0, lookup.lookupStatus, lookup.type),
     }
   }
 
   const fieldScores = scoreReference(lookup, lookup.apiData)
   const matchScore = weightedTotal(fieldScores)
-  const verificationStatus = scoreToStatus(matchScore, lookup.lookupStatus)
+  const verificationStatus = scoreToStatus(matchScore, lookup.lookupStatus, lookup.type)
   const discrepancies = findDiscrepancies(lookup, fieldScores)
   const formattedCitation = await formatChicago(lookup.apiData)
 

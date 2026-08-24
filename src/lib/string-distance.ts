@@ -1,4 +1,4 @@
-import type { AuthorName, FieldScores, NormalizedWork, ParsedReference, VerificationStatus } from '../types'
+import type { AuthorName, FieldScores, NormalizedWork, ParsedReference, ReferenceType, VerificationStatus } from '../types'
 
 // ── Jaro-Winkler ──────────────────────────────────────────────────────────────
 
@@ -183,18 +183,43 @@ function yearScore(input: string | null | undefined, found: string | null | unde
   return diff === 1 ? 0.7 : 0
 }
 
-/** Score authors: best average match between parsed authors and API authors */
+/**
+ * Score two first-name/initial strings. Deliberately lenient about abbreviation —
+ * "J." vs "John" is the same person and must not read as a discrepancy, since citation
+ * styles and API sources disagree constantly on whether to spell out a first name. A
+ * clearly different *full* first name ("Liyang" vs "Guoer") gets no such pass — that
+ * usually means a different person entirely who happens to share a last name.
+ */
+export function firstNameScore(a: string | null | undefined, b: string | null | undefined): number {
+  if (!a || !b) return 1 // nothing to compare — don't penalize missing data
+  const na = a.toLowerCase().replace(/[.\s]/g, '')
+  const nb = b.toLowerCase().replace(/[.\s]/g, '')
+  if (!na || !nb) return 1
+  if (na === nb) return 1
+  // Either side reads as initials (a bare letter, or a run like "jm") — only the first
+  // letter needs to agree. Middle initials and full-vs-abbreviated mismatches are too
+  // inconsistent across sources to penalize.
+  if (na.length <= 3 || nb.length <= 3) {
+    return na[0] === nb[0] ? 1 : 0.3
+  }
+  return fieldScore(a, b)
+}
+
+/**
+ * Score authors: best average match between parsed authors and API authors, weighting
+ * last name more heavily than first — see firstNameScore for why first-name mismatches
+ * are scored leniently for initials but not for two clearly different full names.
+ */
 function authorScore(
   parsedAuthors: AuthorName[],
   foundAuthors: AuthorName[],
 ): number {
   if (!parsedAuthors.length || !foundAuthors.length) return 0
 
-  // For each parsed author, find the best matching found author by last name
   let total = 0
   for (const pa of parsedAuthors) {
     const best = Math.max(
-      ...foundAuthors.map((fa) => fieldScore(pa.last, fa.last)),
+      ...foundAuthors.map((fa) => fieldScore(pa.last, fa.last) * 0.7 + firstNameScore(pa.first, fa.first) * 0.3),
     )
     total += best
   }
@@ -226,13 +251,21 @@ export function weightedTotal(scores: FieldScores): number {
   )
 }
 
-/** Map a weighted total score to a VerificationStatus */
-export function scoreToStatus(score: number, lookupStatus: string): VerificationStatus {
+/**
+ * Map a weighted total score to a VerificationStatus.
+ *
+ * Journal articles get a higher likely-match bar (0.8 vs 0.7): CrossRef/OpenAlex index
+ * nearly all published journal articles, so a 70-79% match is more often a real
+ * discrepancy worth flagging as "weak" than the online-first/print-date noise that
+ * explains most sub-90% scores for other reference types.
+ */
+export function scoreToStatus(score: number, lookupStatus: string, type?: ReferenceType): VerificationStatus {
   if (lookupStatus === 'not-found') return 'not-found'
   if (lookupStatus === 'unverifiable') return 'unverifiable'
   if (lookupStatus === 'error') return 'not-found'
+  const likelyMatchThreshold = type === 'journal-article' ? 0.8 : 0.7
   if (score >= 0.9) return 'verified'
-  if (score >= 0.7) return 'likely-match'
+  if (score >= likelyMatchThreshold) return 'likely-match'
   if (score >= 0.5) return 'weak-match'
   return 'not-found'
 }

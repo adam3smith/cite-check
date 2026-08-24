@@ -1,12 +1,18 @@
 import { parseReferenceList } from './stages/stage1-parse'
-import { extractFields } from './stages/stage2-extract'
+import { extractFields, fillRepeatedAuthors } from './stages/stage2-extract'
 import { lookupReference, resetGoogleBooksQuota } from './stages/stage3-lookup'
 import { verifyReference } from './stages/stage4-verify'
 import { initCitationFormat } from './lib/citation-format'
 import { resetAllQueues } from './lib/rate-limiter'
-import type { VerifiedReference, VerificationStatus } from './types'
+import { aiFixLineBreaks as runAiFixLineBreaks, recheckReference } from './lib/llm-tasks'
+import { DEFAULT_LLM_MODEL, LLM_MODELS } from './lib/llm-models'
+import type { AiCheckVerdict, VerifiedReference, VerificationStatus } from './types'
 
 export type { VerifiedReference, VerificationStatus }
+export { LLM_MODELS }
+
+const LLM_KEY_STORAGE = 'citecheck_llm_api_key'
+const LLM_MODEL_STORAGE = 'citecheck_llm_model'
 
 type Stage = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -19,22 +25,38 @@ export interface CiteCheckApp {
   references: VerifiedReference[]
   error: string | null
   expandedIndex: number | null
+  isRunning: boolean
+
+  // AI-assist (optional; only active when an API key is supplied)
+  llmApiKey: string
+  llmModel: string
+  aiBusy: boolean
+  aiError: string | null
+  aiProgressCurrent: number
+  aiProgressTotal: number
 
   // Computed
   readonly verified: VerifiedReference[]
   readonly unverified: VerifiedReference[]
+  readonly aiRecheckable: VerifiedReference[]
   readonly unverifiedByStatus: Record<string, VerifiedReference[]>
   readonly total: number
   readonly parsedEntries: { index: number; raw: string }[]
+  readonly llmEnabled: boolean
+  readonly statusSummary: string
+  readonly aiCheckSummary: string
   showPreview: boolean
 
   // Actions
   run(): Promise<void>
   reset(): void
   fixLineBreaks(): void
+  aiFixLineBreaks(): Promise<void>
+  aiRecheckAll(): Promise<void>
   copyVerified(): Promise<void>
   exportCSV(): void
   toggleExpand(index: number): void
+  saveLlmSettings(): void
 }
 
 const STATUS_LABELS: Record<VerificationStatus, string> = {
@@ -43,6 +65,38 @@ const STATUS_LABELS: Record<VerificationStatus, string> = {
   'weak-match': 'Weak match (review recommended)',
   'not-found': 'Not found in any database',
   'unverifiable': 'Unverifiable',
+}
+
+const STATUS_SUMMARY_ORDER: VerificationStatus[] = [
+  'verified',
+  'likely-match',
+  'weak-match',
+  'not-found',
+  'unverifiable',
+]
+
+const STATUS_SUMMARY_LABELS: Record<VerificationStatus, string> = {
+  'verified': 'verified',
+  'likely-match': 'likely match',
+  'weak-match': 'weak match',
+  'not-found': 'not found',
+  'unverifiable': 'unverifiable',
+}
+
+const AI_VERDICT_SUMMARY_ORDER: AiCheckVerdict[] = [
+  'confirmed',
+  'corrected',
+  'partially-fabricated',
+  'likely-fabricated',
+  'inconclusive',
+]
+
+const AI_VERDICT_SUMMARY_LABELS: Record<AiCheckVerdict, string> = {
+  confirmed: 'confirmed',
+  corrected: 'corrected',
+  'partially-fabricated': 'partially fabricated',
+  'likely-fabricated': 'likely fabricated',
+  inconclusive: 'inconclusive',
 }
 
 export function citeCheckApp(): CiteCheckApp {
@@ -54,7 +108,19 @@ export function citeCheckApp(): CiteCheckApp {
     references: [],
     error: null,
     expandedIndex: null,
+    isRunning: false,
     showPreview: false,
+
+    llmApiKey: localStorage.getItem(LLM_KEY_STORAGE) ?? '',
+    llmModel: localStorage.getItem(LLM_MODEL_STORAGE) ?? DEFAULT_LLM_MODEL,
+    aiBusy: false,
+    aiError: null,
+    aiProgressCurrent: 0,
+    aiProgressTotal: 0,
+
+    get llmEnabled() {
+      return this.llmApiKey.trim().length > 0
+    },
 
     get verified() {
       return this.references.filter(
@@ -66,6 +132,13 @@ export function citeCheckApp(): CiteCheckApp {
       return this.references.filter(
         (r) => r.verificationStatus !== 'verified' && r.verificationStatus !== 'likely-match',
       )
+    },
+
+    // Unverified references worth spending an AI Double-Check call on. Excludes
+    // 'unverifiable' (mostly website URLs the browser can't confirm either way —
+    // a local skill with real network access could just curl these instead).
+    get aiRecheckable() {
+      return this.unverified.filter((r) => r.verificationStatus !== 'unverifiable')
     },
 
     get unverifiedByStatus() {
@@ -82,76 +155,110 @@ export function citeCheckApp(): CiteCheckApp {
       return this.references.length
     },
 
+    get statusSummary() {
+      const counts: Partial<Record<VerificationStatus, number>> = {}
+      for (const ref of this.references) {
+        counts[ref.verificationStatus] = (counts[ref.verificationStatus] ?? 0) + 1
+      }
+      return STATUS_SUMMARY_ORDER
+        .filter((s) => counts[s])
+        .map((s) => `${counts[s]} ${STATUS_SUMMARY_LABELS[s]}`)
+        .join(' · ')
+    },
+
+    get aiCheckSummary() {
+      const counts: Partial<Record<AiCheckVerdict, number>> = {}
+      let total = 0
+      for (const ref of this.references) {
+        if (!ref.aiCheck) continue
+        counts[ref.aiCheck.verdict] = (counts[ref.aiCheck.verdict] ?? 0) + 1
+        total++
+      }
+      if (total === 0) return ''
+      return AI_VERDICT_SUMMARY_ORDER
+        .filter((v) => counts[v])
+        .map((v) => `${counts[v]} ${AI_VERDICT_SUMMARY_LABELS[v]}`)
+        .join(' · ')
+    },
+
     get parsedEntries() {
       if (!this.inputText.trim()) return []
       return parseReferenceList(this.inputText)
     },
 
     async run() {
-      if (!this.inputText.trim()) return
+      // Guard against a second click while a run is already in progress — without this,
+      // both invocations reset and push into the same `references` array concurrently,
+      // producing duplicate entries (same .index twice) that collide on x-for's :key.
+      if (!this.inputText.trim() || this.isRunning) return
+      this.isRunning = true
       this.error = null
       this.references = []
       this.progress = 0
       this.expandedIndex = null
 
       try {
-        // Init citation.js CSL (no-op if already done)
-        await initCitationFormat()
-      } catch (e) {
-        // Non-fatal: citation formatting will return null, but verification still works
-        console.warn('CSL init failed:', e)
-      }
-
-      // Stage 1: parse
-      this.stage = 1
-      this.statusMessage = 'Parsing reference list…'
-      const rawEntries = parseReferenceList(this.inputText)
-      const total = rawEntries.length
-
-      if (total === 0) {
-        this.error = 'No references found. Make sure your reference list is pasted into the text area.'
-        this.stage = 0
-        return
-      }
-
-      // Stage 2: extract
-      this.stage = 2
-      this.statusMessage = `Extracting fields from ${total} reference${total !== 1 ? 's' : ''}…`
-      const parsed = rawEntries.map(extractFields)
-
-      // Stages 3–4: lookup + verify (streamed)
-      this.stage = 3
-      for (let i = 0; i < parsed.length; i++) {
-        const ref = parsed[i]
-        this.statusMessage = `Checking reference ${i + 1} of ${total}: ${ref.title ?? ref.raw.slice(0, 60)}…`
-        this.progress = Math.round((i / total) * 100)
-
         try {
-          this.stage = 3
-          const lookupResult = await lookupReference(ref)
-          this.stage = 4
-          const verified = await verifyReference(lookupResult)
-          this.references.push(verified)
+          // Init citation.js CSL (no-op if already done)
+          await initCitationFormat()
         } catch (e) {
-          // On unexpected error, push a not-found entry so the reference isn't silently dropped
-          console.error('Error processing reference:', ref.raw, e)
-          this.references.push({
-            ...ref,
-            lookupStatus: 'error',
-            lookupSource: null,
-            apiData: null,
-            matchScore: 0,
-            fieldScores: { author: 0, title: 0, year: 0, container: 0, pages: 0 },
-            formattedCitation: null,
-            discrepancies: [],
-            verificationStatus: 'not-found',
-          })
+          // Non-fatal: citation formatting will return null, but verification still works
+          console.warn('CSL init failed:', e)
         }
-      }
 
-      this.progress = 100
-      this.stage = 5
-      this.statusMessage = `Done. ${this.verified.length} of ${total} references verified.`
+        // Stage 1: parse
+        this.stage = 1
+        this.statusMessage = 'Parsing reference list…'
+        const rawEntries = parseReferenceList(this.inputText)
+        const total = rawEntries.length
+
+        if (total === 0) {
+          this.error = 'No references found. Make sure your reference list is pasted into the text area.'
+          this.stage = 0
+          return
+        }
+
+        // Stage 2: extract
+        this.stage = 2
+        this.statusMessage = `Extracting fields from ${total} reference${total !== 1 ? 's' : ''}…`
+        const parsed = fillRepeatedAuthors(rawEntries.map(extractFields))
+
+        // Stages 3–4: lookup + verify (streamed)
+        this.stage = 3
+        for (let i = 0; i < parsed.length; i++) {
+          const ref = parsed[i]
+          this.statusMessage = `Checking reference ${i + 1} of ${total}: ${ref.title ?? ref.raw.slice(0, 60)}…`
+          this.progress = Math.round((i / total) * 100)
+
+          try {
+            this.stage = 3
+            const lookupResult = await lookupReference(ref)
+            this.stage = 4
+            const verified = await verifyReference(lookupResult)
+            this.references.push(verified)
+          } catch (e) {
+            // On unexpected error, push a not-found entry so the reference isn't silently dropped
+            console.error('Error processing reference:', ref.raw, e)
+            this.references.push({
+              ...ref,
+              lookupStatus: 'error',
+              lookupSource: null,
+              apiData: null,
+              matchScore: 0,
+              fieldScores: { author: 0, title: 0, year: 0, container: 0, pages: 0 },
+              formattedCitation: null,
+              discrepancies: [],
+              verificationStatus: 'not-found',
+            })
+          }
+        }
+
+        this.progress = 100
+        this.stage = 5
+        this.statusMessage = `Done. ${this.verified.length} of ${total} references verified.`
+      } finally {
+        this.isRunning = false
+      }
     },
 
     reset() {
@@ -165,6 +272,7 @@ export function citeCheckApp(): CiteCheckApp {
       this.error = null
       this.expandedIndex = null
       this.showPreview = false
+      this.isRunning = false
     },
 
     fixLineBreaks() {
@@ -317,6 +425,63 @@ export function citeCheckApp(): CiteCheckApp {
       if (buffer) result.push(buffer)
 
       this.inputText = result.join('\n')
+    },
+
+    saveLlmSettings() {
+      localStorage.setItem(LLM_KEY_STORAGE, this.llmApiKey)
+      localStorage.setItem(LLM_MODEL_STORAGE, this.llmModel)
+    },
+
+    async aiFixLineBreaks() {
+      if (!this.llmEnabled || !this.inputText.trim() || this.aiBusy) return
+      this.aiError = null
+      this.aiBusy = true
+      try {
+        this.inputText = await runAiFixLineBreaks(this.llmApiKey, this.llmModel, this.inputText)
+      } catch (e) {
+        console.error('AI Fix Line Breaks failed:', e)
+        this.aiError = 'AI Fix Line Breaks failed — check your API key and try again.'
+      } finally {
+        this.aiBusy = false
+      }
+    },
+
+    async aiRecheckAll() {
+      if (!this.llmEnabled || this.aiBusy) return
+      this.aiError = null
+      this.aiBusy = true
+      this.aiProgressCurrent = 0
+      this.aiProgressTotal = this.aiRecheckable.length
+      try {
+        for (let i = 0; i < this.references.length; i++) {
+          const ref = this.references[i]
+          if (
+            ref.verificationStatus === 'verified' ||
+            ref.verificationStatus === 'likely-match' ||
+            ref.verificationStatus === 'unverifiable'
+          ) continue
+          this.aiProgressCurrent++
+          try {
+            const aiCheck = await recheckReference(this.llmApiKey, this.llmModel, ref)
+            this.references[i] = { ...ref, aiCheck }
+          } catch (e) {
+            console.error('AI double-check failed for reference:', ref.raw, e)
+            this.references[i] = {
+              ...ref,
+              aiCheck: {
+                verdict: 'inconclusive',
+                note: 'AI double-check failed for this reference.',
+                suggestedCitation: null,
+                suggestedFields: null,
+                sources: [],
+                model: this.llmModel,
+              },
+            }
+          }
+        }
+      } finally {
+        this.aiBusy = false
+      }
     },
 
     async copyVerified() {

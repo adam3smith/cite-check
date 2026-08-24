@@ -88,6 +88,33 @@ export interface VerifiedReference extends LookupResult {
   formattedCitation: string | null // Chicago 17th from API data
   discrepancies: Discrepancy[]
   verificationStatus: VerificationStatus
+  aiCheck?: AiCheckResult | null
+}
+
+export type AiCheckVerdict =
+  | 'confirmed'
+  | 'corrected'
+  | 'partially-fabricated'
+  | 'likely-fabricated'
+  | 'inconclusive'
+
+/** Per-field values the AI found for a "corrected" or "partially-fabricated" verdict */
+export interface AiSuggestedFields {
+  authors: string | null
+  year: string | null
+  title: string | null
+  container: string | null
+  pages: string | null
+}
+
+/** Result of an optional LLM-assisted double-check on an unverified reference */
+export interface AiCheckResult {
+  verdict: AiCheckVerdict
+  note: string
+  suggestedCitation: string | null
+  suggestedFields: AiSuggestedFields | null
+  sources: string[]
+  model: string
 }
 
 // Score thresholds:

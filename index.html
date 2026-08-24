@@ -37,14 +37,57 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
             <button class="btn btn-secondary" @click="fixLineBreaks()" :disabled="!inputText.trim()" title="Join wrapped lines from PDF copy-paste and remove row numbers">
               Fix Line Breaks
             </button>
+            <button
+              class="btn btn-secondary"
+              @click="aiFixLineBreaks()"
+              :disabled="!inputText.trim() || aiBusy"
+              x-show="llmEnabled"
+              title="Use Claude to double-check and fix line breaks"
+            >
+              <span x-text="aiBusy ? 'Asking Claude…' : '✨ AI Fix Line Breaks'"></span>
+            </button>
             <button class="btn btn-secondary" @click="showPreview = !showPreview" :disabled="!inputText.trim()">
               <span x-text="showPreview ? 'Hide Preview' : 'Preview Structure'"></span>
               <span x-show="parsedEntries.length > 0" x-text="`(${parsedEntries.length})`" style="font-weight:400; opacity:0.75"></span>
             </button>
-            <button class="btn btn-primary" @click="run()" :disabled="!inputText.trim()">
+            <button class="btn btn-primary" @click="run()" :disabled="!inputText.trim() || isRunning">
               Validate References
             </button>
           </div>
+
+          <p class="error-msg" x-show="aiError" x-text="aiError"></p>
+
+          <details class="info-panel ai-settings">
+            <summary>AI Assist (optional)</summary>
+            <div class="ai-settings-body">
+              <p class="note">
+                Add your own Anthropic API key to unlock AI-assisted line-break fixing and double-checking of
+                unverified references with web search. Your key is stored only in this browser and sent directly
+                to Anthropic — never through any server this app controls. Get a key at
+                <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>.
+              </p>
+              <div class="ai-settings-row">
+                <label for="llmApiKey">Anthropic API key</label>
+                <input
+                  id="llmApiKey"
+                  type="password"
+                  x-model="llmApiKey"
+                  @change="saveLlmSettings()"
+                  placeholder="sk-ant-…"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+              <div class="ai-settings-row">
+                <label for="llmModel">Model</label>
+                <select id="llmModel" x-model="llmModel" @change="saveLlmSettings()">
+                  <template x-for="m in $llmModels" :key="m.id">
+                    <option :value="m.id" :selected="m.id === llmModel" x-text="m.label"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </details>
 
           <div class="structure-preview" x-show="showPreview && parsedEntries.length > 0">
             <p class="structure-preview-header">
@@ -111,10 +154,33 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
               <button class="btn btn-secondary" @click="copyVerified()" x-show="verified.length > 0">
                 Copy Verified (<span x-text="verified.length"></span>)
               </button>
+              <button
+                class="btn btn-secondary"
+                @click="aiRecheckAll()"
+                :disabled="aiBusy"
+                x-show="llmEnabled && aiRecheckable.length > 0"
+                title="Ask Claude to double-check weak/not-found references and search for close matches. Skips 'unverifiable' website references — the browser can't confirm those either way, so there's little for the AI to add."
+              >
+                <span x-text="aiBusy ? `Asking Claude… (${aiProgressCurrent}/${aiProgressTotal})` : `✨ AI Double-Check (${aiRecheckable.length})`"></span>
+              </button>
               <button class="btn btn-secondary" @click="exportCSV()">Export CSV</button>
               <button class="btn btn-outline" @click="reset()">Start Over</button>
             </div>
           </div>
+
+          <p class="status-summary" x-show="statusSummary" x-text="statusSummary"></p>
+
+          <div class="ai-progress-wrap" x-show="aiBusy" x-cloak>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" :style="`width: ${aiProgressTotal ? (aiProgressCurrent / aiProgressTotal * 100) : 0}%`"></div>
+            </div>
+          </div>
+
+          <p class="error-msg" x-show="aiError" x-text="aiError"></p>
+
+          <p class="ai-check-summary-line" x-show="aiCheckSummary">
+            <strong>AI Double-Check:</strong> <span x-text="aiCheckSummary"></span>
+          </p>
 
           <!-- Verified -->
           <div class="result-section" x-show="verified.length > 0">
@@ -177,7 +243,17 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
                     <div class="ref-card-main">
                       <span :class="$statusBadgeClass(ref.verificationStatus)" x-text="$statusLabel(ref.verificationStatus)"></span>
                       <span class="ref-type" x-text="ref.type"></span>
+                      <template x-if="ref.aiCheck">
+                        <span
+                          class="badge ai-verdict-badge"
+                          :class="`verdict-${ref.aiCheck.verdict}`"
+                          x-text="'🤖 ' + ref.aiCheck.verdict.replace('-', ' ')"
+                        ></span>
+                      </template>
                       <p class="ref-citation" x-text="ref.raw"></p>
+                      <p class="discrepancy-hint" x-show="ref.aiCheck">
+                        AI double-check available — click to review
+                      </p>
                     </div>
                     <div class="ref-card-detail" x-show="expandedIndex === ref.index">
                       <div class="detail-row" x-show="ref.title">
@@ -219,6 +295,36 @@ World Bank. 2023. &quot;World Development Indicators.&quot; Accessed January 15,
                           an opaque response — the URL is reachable but we cannot confirm the HTTP status code.
                           Only DNS failures or network errors are reported as "not found."
                         </p>
+                      </template>
+                      <template x-if="ref.aiCheck">
+                        <div class="ai-check">
+                          <p class="ai-check-header">
+                            <span class="badge ai-verdict-badge" :class="`verdict-${ref.aiCheck.verdict}`" x-text="ref.aiCheck.verdict.replace('-', ' ')"></span>
+                            <span class="ai-check-model" x-text="ref.aiCheck.model"></span>
+                          </p>
+                          <p class="ai-check-note" x-text="ref.aiCheck.note"></p>
+                          <template x-if="ref.aiCheck.suggestedFields">
+                            <div class="ai-check-fields discrepancies">
+                              <span class="detail-label">Side-by-side:</span>
+                              <template x-for="row in $aiFieldRows(ref)" :key="row.label">
+                                <div class="discrepancy-item" :class="ref.aiCheck.verdict === 'partially-fabricated' ? 'severity-major' : 'severity-minor'">
+                                  <strong x-text="row.label + ':'"></strong>
+                                  <span x-text="`Input: ${row.input}`"></span>
+                                  <span x-text="`Found: ${row.found}`"></span>
+                                </div>
+                              </template>
+                            </div>
+                          </template>
+                          <p class="ai-check-suggestion" x-show="ref.aiCheck.suggestedCitation">
+                            <strong>Suggested citation:</strong> <span x-text="ref.aiCheck.suggestedCitation"></span>
+                          </p>
+                          <p class="ai-check-sources" x-show="ref.aiCheck.sources.length > 0">
+                            <strong>Sources:</strong>
+                            <template x-for="src in ref.aiCheck.sources" :key="src">
+                              <a :href="src" target="_blank" x-text="src"></a>
+                            </template>
+                          </p>
+                        </div>
                       </template>
                     </div>
                   </div>

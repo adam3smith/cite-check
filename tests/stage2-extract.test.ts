@@ -7,10 +7,12 @@ import {
   extractAuthors,
   normalizeTitle,
   extractFields,
+  isRepeatedAuthorPlaceholder,
+  fillRepeatedAuthors,
 } from '../src/stages/stage2-extract'
 import { classifyType } from '../src/stages/stage1-parse'
 import { fixtures } from './fixtures/references'
-import type { RawEntry } from '../src/types'
+import type { ParsedReference, RawEntry } from '../src/types'
 
 // ── extractDOI ────────────────────────────────────────────────────────────────
 
@@ -152,6 +154,28 @@ describe('extractAuthors', () => {
     const authors = extractAuthors('Heinze A-S')
     expect(authors[0].last).toBe('Heinze')
     expect(authors[0].first).toBe('A-S')
+  })
+
+  it('keeps a Dutch "van den" surname particle attached to the last name (First Last format)', () => {
+    const authors = extractAuthors(
+      'Maestre-Andrés, Sara, Stefan Drews, Ivan Savin, and Jeroen van den Bergh',
+    )
+    const bergh = authors[authors.length - 1]
+    expect(bergh.last).toBe('van den Bergh')
+    expect(bergh.first).toBe('Jeroen')
+  })
+
+  it('keeps a German "von" surname particle attached to the last name', () => {
+    const authors = extractAuthors('Ludwig von Mises')
+    expect(authors[0].last).toBe('von Mises')
+    expect(authors[0].first).toBe('Ludwig')
+  })
+
+  it('does not absorb a capitalized middle name that happens to look like a particle word', () => {
+    // "La" here is a capitalized given name, not the lowercase particle "la" — must not be merged in
+    const authors = extractAuthors('La Fontaine')
+    expect(authors[0].last).toBe('Fontaine')
+    expect(authors[0].first).toBe('La')
   })
 
 
@@ -539,5 +563,128 @@ describe('extractFields — book-chapter with quoted title (Chicago bib style)',
   })
   it('extracts pages 314', () => {
     expect(extractFields(makeEntry(benson)).pages).toContain('314')
+  })
+})
+
+// ── Repeated-author placeholder (———, ----, etc.) ──────────────────────────────
+
+describe('isRepeatedAuthorPlaceholder', () => {
+  it('matches a run of em dashes followed by a period', () => {
+    expect(isRepeatedAuthorPlaceholder('———. 1997. Intersecting Voices.')).toBe(true)
+  })
+  it('matches a run of hyphens', () => {
+    expect(isRepeatedAuthorPlaceholder('----. 2002. Inclusion and Democracy.')).toBe(true)
+  })
+  it('matches a shorter run of hyphens with a comma', () => {
+    expect(isRepeatedAuthorPlaceholder('--, 2004. Some Title.')).toBe(true)
+  })
+  it('does not match a normal author name', () => {
+    expect(isRepeatedAuthorPlaceholder('Young, Iris Marion. 1990. Justice and the Politics of Difference.')).toBe(false)
+  })
+  it('does not match a hyphenated last name', () => {
+    expect(isRepeatedAuthorPlaceholder('Smith-Jones, Amy. 2020. Some Title.')).toBe(false)
+  })
+})
+
+describe('extractAuthors / parseOneName reject dash placeholders', () => {
+  it('returns no authors for a bare em-dash placeholder segment', () => {
+    expect(extractAuthors('———')).toEqual([])
+  })
+  it('returns no authors for a bare hyphen-run placeholder segment', () => {
+    expect(extractAuthors('----')).toEqual([])
+  })
+})
+
+describe('fillRepeatedAuthors', () => {
+  function makeParsed(raw: string, authors: { last: string; first: string | null }[]): ParsedReference {
+    const { type, confidence } = classifyType(raw)
+    return {
+      index: 0,
+      raw,
+      type,
+      parseConfidence: confidence,
+      authors,
+      year: null,
+      title: null,
+      container: null,
+      doi: null,
+      url: null,
+      isbn: null,
+      pages: null,
+      volume: null,
+      issue: null,
+    }
+  }
+
+  it('fills a dash-placeholder entry from the immediately preceding entry', () => {
+    const entries = [
+      makeParsed('Young, Iris Marion. 1990. Justice and the Politics of Difference.', [{ last: 'Young', first: 'Iris Marion' }]),
+      makeParsed('———. 1997. Intersecting Voices.', []),
+    ]
+    const result = fillRepeatedAuthors(entries)
+    expect(result[1].authors).toEqual([{ last: 'Young', first: 'Iris Marion' }])
+    // Original entry is untouched
+    expect(result[0].authors).toEqual([{ last: 'Young', first: 'Iris Marion' }])
+  })
+
+  it('carries the same authors across a chain of consecutive placeholders', () => {
+    const entries = [
+      makeParsed('Young, Iris Marion. 1990. Justice and the Politics of Difference.', [{ last: 'Young', first: 'Iris Marion' }]),
+      makeParsed('———. 1997. Intersecting Voices.', []),
+      makeParsed('———. 2002. Inclusion and Democracy.', []),
+      makeParsed('———. 2011. Responsibility for Justice.', []),
+    ]
+    const result = fillRepeatedAuthors(entries)
+    expect(result[1].authors).toEqual([{ last: 'Young', first: 'Iris Marion' }])
+    expect(result[2].authors).toEqual([{ last: 'Young', first: 'Iris Marion' }])
+    expect(result[3].authors).toEqual([{ last: 'Young', first: 'Iris Marion' }])
+  })
+
+  it('resets to the new author once a non-placeholder entry appears', () => {
+    const entries = [
+      makeParsed('Young, Iris Marion. 1990. Justice and the Politics of Difference.', [{ last: 'Young', first: 'Iris Marion' }]),
+      makeParsed('———. 1997. Intersecting Voices.', []),
+      makeParsed('Zamora, Justo Serrano, and Lisa Herzog. 2022. A Real Epistemic Utopia?', [
+        { last: 'Zamora', first: 'Justo Serrano' },
+        { last: 'Herzog', first: 'Lisa' },
+      ]),
+    ]
+    const result = fillRepeatedAuthors(entries)
+    expect(result[2].authors).toEqual([
+      { last: 'Zamora', first: 'Justo Serrano' },
+      { last: 'Herzog', first: 'Lisa' },
+    ])
+  })
+
+  it('leaves a leading placeholder with no authors when there is nothing to inherit from', () => {
+    const entries = [makeParsed('———. 1997. Intersecting Voices.', [])]
+    const result = fillRepeatedAuthors(entries)
+    expect(result[0].authors).toEqual([])
+  })
+
+  it('leaves non-placeholder entries with no parsed authors unchanged', () => {
+    const entries = [
+      makeParsed('Young, Iris Marion. 1990. Justice and the Politics of Difference.', [{ last: 'Young', first: 'Iris Marion' }]),
+      makeParsed('Anonymous. 2015. Some Report With No Parsed Author.', []),
+    ]
+    const result = fillRepeatedAuthors(entries)
+    expect(result[1].authors).toEqual([])
+  })
+
+  it('end-to-end: extractFields + fillRepeatedAuthors resolves the Young et al. chain', () => {
+    const raws = [
+      'Young, Iris Marion. 1990. Justice and the Politics of Difference. Princeton University Press.',
+      '———. 1997. Intersecting Voices: Dilemmas of Gender, Political Philosophy, and Policy. Princeton University Press.',
+      '———. 2002. Inclusion and Democracy. Oxford: Oxford University Press.',
+    ]
+    const parsed = raws.map((raw) => {
+      const { type, confidence } = classifyType(raw)
+      return extractFields({ index: 0, raw, type, parseConfidence: confidence })
+    })
+    // Before fill-in, the placeholder entries have no parsed author
+    expect(parsed[1].authors).toEqual([])
+    const filled = fillRepeatedAuthors(parsed)
+    expect(filled[1].authors[0]?.last).toBe('Young')
+    expect(filled[2].authors[0]?.last).toBe('Young')
   })
 })
